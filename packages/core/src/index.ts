@@ -33,6 +33,10 @@ export * from './schema.js';
 export { createDb, runMigrations } from './db.js';
 export type { DB } from './db.js';
 
+// Event bus
+export { EventBus } from './event-bus.js';
+export type { EventHandler, Unsubscribe, PublishInput } from './event-bus.js';
+
 // CRUD
 export {
   createAgent,
