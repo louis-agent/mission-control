@@ -1,8 +1,8 @@
 // Inferred types from schema
 export type AgentStatus = 'idle' | 'busy' | 'offline';
-export type TaskStatus = 'pending' | 'assigned' | 'running' | 'completed' | 'failed';
+export type TaskStatus = 'pending' | 'assigned' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type WorkflowStatus = 'pending' | 'running' | 'completed' | 'failed';
-export type ExecutionRunStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type ExecutionRunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface Agent {
   id: string;
@@ -23,6 +23,8 @@ export interface Task {
   requiredCapabilities: string[];
   assigneeAgentId: string | null;
   workflowId: string | null;
+  executionRunId: string | null;
+  stepId: string | null;
   dependencies: string[];
   input: Record<string, unknown>;
   output: Record<string, unknown>;
@@ -45,6 +47,8 @@ export interface WorkflowStep {
   name: string;
   type: string;
   config: Record<string, unknown>;
+  dependsOn?: string[];
+  requiredCapabilities?: string[];
 }
 
 export interface ExecutionRun {
@@ -53,6 +57,7 @@ export interface ExecutionRun {
   status: ExecutionRunStatus;
   startedAt: Date | null;
   completedAt: Date | null;
+  cancelledAt: Date | null;
   stepResults: StepResult[];
   createdAt: Date;
   updatedAt: Date;
@@ -78,13 +83,18 @@ export interface Event {
 export type CreateAgentInput = Omit<Agent, 'createdAt' | 'updatedAt' | 'lastHeartbeatAt'>;
 export type UpdateAgentInput = Partial<Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>>;
 
-export type CreateTaskInput = Omit<Task, 'createdAt' | 'updatedAt'>;
+export type CreateTaskInput = Omit<Task, 'createdAt' | 'updatedAt' | 'executionRunId' | 'stepId'> & {
+  executionRunId?: string | null;
+  stepId?: string | null;
+};
 export type UpdateTaskInput = Partial<Omit<Task, 'id' | 'createdAt' | 'updatedAt'>>;
 
 export type CreateWorkflowInput = Omit<Workflow, 'createdAt' | 'updatedAt'>;
 export type UpdateWorkflowInput = Partial<Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'>>;
 
-export type CreateExecutionRunInput = Omit<ExecutionRun, 'createdAt' | 'updatedAt'>;
+export type CreateExecutionRunInput = Omit<ExecutionRun, 'createdAt' | 'updatedAt' | 'cancelledAt'> & {
+  cancelledAt?: Date | null;
+};
 export type UpdateExecutionRunInput = Partial<Omit<ExecutionRun, 'id' | 'createdAt' | 'updatedAt'>>;
 
 export type CreateEventInput = Omit<Event, 'createdAt'>;

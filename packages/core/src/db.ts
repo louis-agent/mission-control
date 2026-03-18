@@ -38,10 +38,12 @@ export function runMigrations(sqlite: Database.Database) {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'assigned', 'running', 'completed', 'failed')),
+      status TEXT NOT NULL DEFAULT 'pending',
       required_capabilities TEXT NOT NULL DEFAULT '[]',
       assignee_agent_id TEXT,
       workflow_id TEXT,
+      execution_run_id TEXT,
+      step_id TEXT,
       dependencies TEXT NOT NULL DEFAULT '[]',
       input TEXT NOT NULL DEFAULT '{}',
       output TEXT NOT NULL DEFAULT '{}',
@@ -53,9 +55,10 @@ export function runMigrations(sqlite: Database.Database) {
     CREATE TABLE IF NOT EXISTS execution_runs (
       id TEXT PRIMARY KEY,
       workflow_id TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+      status TEXT NOT NULL DEFAULT 'pending',
       started_at INTEGER,
       completed_at INTEGER,
+      cancelled_at INTEGER,
       step_results TEXT NOT NULL DEFAULT '[]',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -70,4 +73,12 @@ export function runMigrations(sqlite: Database.Database) {
       created_at INTEGER NOT NULL
     );
   `);
+
+  // Additive migrations for existing databases
+  const addIfMissing = (sql: string) => {
+    try { sqlite.exec(sql); } catch { /* column already exists */ }
+  };
+  addIfMissing('ALTER TABLE tasks ADD COLUMN execution_run_id TEXT');
+  addIfMissing('ALTER TABLE tasks ADD COLUMN step_id TEXT');
+  addIfMissing('ALTER TABLE execution_runs ADD COLUMN cancelled_at INTEGER');
 }

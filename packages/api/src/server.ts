@@ -2,6 +2,7 @@ import express from 'express';
 import { createDb } from '@mission-control/core';
 import { createRegistryApp } from './registry.js';
 import { createQueueApp } from './queue.js';
+import { createWorkflowRunnerApp } from './workflow-runner.js';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const DB_PATH = process.env.DB_PATH ?? './mission-control.db';
@@ -13,6 +14,7 @@ app.use(express.json());
 
 app.use(createRegistryApp(db));
 app.use(createQueueApp(db));
+app.use(createWorkflowRunnerApp(db));
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });

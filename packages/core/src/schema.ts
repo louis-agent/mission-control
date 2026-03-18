@@ -27,10 +27,12 @@ export const tasks = sqliteTable('tasks', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   description: text('description').notNull().default(''),
-  status: text('status', { enum: ['pending', 'assigned', 'running', 'completed', 'failed'] }).notNull().default('pending'),
+  status: text('status', { enum: ['pending', 'assigned', 'running', 'completed', 'failed', 'cancelled'] }).notNull().default('pending'),
   requiredCapabilities: text('required_capabilities').notNull().default('[]'), // JSON array
   assigneeAgentId: text('assignee_agent_id'),
   workflowId: text('workflow_id'),
+  executionRunId: text('execution_run_id'),
+  stepId: text('step_id'),
   dependencies: text('dependencies').notNull().default('[]'), // JSON array of task IDs
   input: text('input').notNull().default('{}'), // JSON object
   output: text('output').notNull().default('{}'), // JSON object
@@ -43,9 +45,10 @@ export const tasks = sqliteTable('tasks', {
 export const executionRuns = sqliteTable('execution_runs', {
   id: text('id').primaryKey(),
   workflowId: text('workflow_id').notNull(),
-  status: text('status', { enum: ['pending', 'running', 'completed', 'failed'] }).notNull().default('pending'),
+  status: text('status', { enum: ['pending', 'running', 'completed', 'failed', 'cancelled'] }).notNull().default('pending'),
   startedAt: integer('started_at', { mode: 'timestamp' }),
   completedAt: integer('completed_at', { mode: 'timestamp' }),
+  cancelledAt: integer('cancelled_at', { mode: 'timestamp' }),
   stepResults: text('step_results').notNull().default('[]'), // JSON array
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),

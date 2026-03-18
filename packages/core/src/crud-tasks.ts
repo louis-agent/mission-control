@@ -15,6 +15,8 @@ function rowToTask(row: TaskRow): Task {
     requiredCapabilities: fromJson<string[]>(row.requiredCapabilities),
     assigneeAgentId: row.assigneeAgentId,
     workflowId: row.workflowId,
+    executionRunId: row.executionRunId ?? null,
+    stepId: row.stepId ?? null,
     dependencies: fromJson<string[]>(row.dependencies),
     input: fromJson<Record<string, unknown>>(row.input),
     output: fromJson<Record<string, unknown>>(row.output),
@@ -34,6 +36,8 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     requiredCapabilities: toJson(input.requiredCapabilities),
     assigneeAgentId: input.assigneeAgentId,
     workflowId: input.workflowId,
+    executionRunId: input.executionRunId ?? null,
+    stepId: input.stepId ?? null,
     dependencies: toJson(input.dependencies),
     input: toJson(input.input),
     output: toJson(input.output),
@@ -61,6 +65,8 @@ export function updateTask(db: DB, id: string, input: UpdateTaskInput): Task | n
   if (input.requiredCapabilities !== undefined) updates.requiredCapabilities = toJson(input.requiredCapabilities);
   if (input.assigneeAgentId !== undefined) updates.assigneeAgentId = input.assigneeAgentId;
   if (input.workflowId !== undefined) updates.workflowId = input.workflowId;
+  if (input.executionRunId !== undefined) updates.executionRunId = input.executionRunId;
+  if (input.stepId !== undefined) updates.stepId = input.stepId;
   if (input.dependencies !== undefined) updates.dependencies = toJson(input.dependencies);
   if (input.input !== undefined) updates.input = toJson(input.input);
   if (input.output !== undefined) updates.output = toJson(input.output);
@@ -85,6 +91,13 @@ export function listPendingTasks(db: DB): Task[] {
 export function listTasksByStatus(db: DB, status: Task['status']): Task[] {
   return db.select().from(tasks)
     .where(eq(tasks.status, status))
+    .all()
+    .map(rowToTask);
+}
+
+export function listTasksByExecutionRun(db: DB, executionRunId: string): Task[] {
+  return db.select().from(tasks)
+    .where(eq(tasks.executionRunId, executionRunId))
     .all()
     .map(rowToTask);
 }

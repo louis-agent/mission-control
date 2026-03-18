@@ -53,6 +53,7 @@ export {
   deleteTask,
   listPendingTasks,
   listTasksByStatus,
+  listTasksByExecutionRun,
   createWorkflow,
   getWorkflowById,
   listWorkflows,
@@ -66,4 +67,10 @@ export {
   createEvent,
   getEventById,
   listEvents,
+  // Workflow engine
+  validateWorkflow,
+  startExecution,
+  advanceExecution,
+  cancelExecution,
+  InvalidTransitionError,
 } from './crud.js';

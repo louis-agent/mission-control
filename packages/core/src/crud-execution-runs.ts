@@ -13,6 +13,7 @@ function rowToExecutionRun(row: ExecutionRunRow): ExecutionRun {
     status: row.status,
     startedAt: (row.startedAt as Date | null),
     completedAt: (row.completedAt as Date | null),
+    cancelledAt: (row.cancelledAt as Date | null) ?? null,
     stepResults: fromJson(row.stepResults),
     createdAt: row.createdAt as Date,
     updatedAt: row.updatedAt as Date,
@@ -27,6 +28,7 @@ export function createExecutionRun(db: DB, input: CreateExecutionRunInput): Exec
     status: input.status,
     startedAt: input.startedAt,
     completedAt: input.completedAt,
+    cancelledAt: input.cancelledAt ?? null,
     stepResults: toJson(input.stepResults),
     createdAt: now,
     updatedAt: now,
@@ -49,6 +51,7 @@ export function updateExecutionRun(db: DB, id: string, input: UpdateExecutionRun
   if (input.status !== undefined) updates.status = input.status;
   if (input.startedAt !== undefined) updates.startedAt = input.startedAt;
   if (input.completedAt !== undefined) updates.completedAt = input.completedAt;
+  if (input.cancelledAt !== undefined) updates.cancelledAt = input.cancelledAt;
   if (input.stepResults !== undefined) updates.stepResults = toJson(input.stepResults);
   db.update(executionRuns).set(updates).where(eq(executionRuns.id, id)).run();
   return getExecutionRunById(db, id);
