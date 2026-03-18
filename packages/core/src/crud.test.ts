@@ -149,11 +149,13 @@ describe('Task CRUD', () => {
     title: 'Build feature',
     description: 'Implement the new feature',
     status: 'pending' as const,
+    requiredCapabilities: [],
     assigneeAgentId: null,
     workflowId: null,
     dependencies: [],
     input: { repo: 'mission-control' },
     output: {},
+    errorMessage: null,
   };
 
   it('creates a task and retrieves it', () => {

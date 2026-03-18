@@ -28,11 +28,13 @@ export const tasks = sqliteTable('tasks', {
   title: text('title').notNull(),
   description: text('description').notNull().default(''),
   status: text('status', { enum: ['pending', 'assigned', 'running', 'completed', 'failed'] }).notNull().default('pending'),
+  requiredCapabilities: text('required_capabilities').notNull().default('[]'), // JSON array
   assigneeAgentId: text('assignee_agent_id'),
   workflowId: text('workflow_id'),
   dependencies: text('dependencies').notNull().default('[]'), // JSON array of task IDs
   input: text('input').notNull().default('{}'), // JSON object
   output: text('output').notNull().default('{}'), // JSON object
+  errorMessage: text('error_message'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });

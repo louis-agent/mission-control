@@ -39,11 +39,13 @@ export function runMigrations(sqlite: Database.Database) {
       title TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'assigned', 'running', 'completed', 'failed')),
+      required_capabilities TEXT NOT NULL DEFAULT '[]',
       assignee_agent_id TEXT,
       workflow_id TEXT,
       dependencies TEXT NOT NULL DEFAULT '[]',
       input TEXT NOT NULL DEFAULT '{}',
       output TEXT NOT NULL DEFAULT '{}',
+      error_message TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );

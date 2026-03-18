@@ -47,6 +47,8 @@ export {
   listTasks,
   updateTask,
   deleteTask,
+  listPendingTasks,
+  listTasksByStatus,
   createWorkflow,
   getWorkflowById,
   listWorkflows,

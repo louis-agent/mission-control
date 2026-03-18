@@ -3,3 +3,4 @@
 export const API_VERSION = 'v1';
 
 export { createRegistryApp } from './registry.js';
+export { createQueueApp } from './queue.js';

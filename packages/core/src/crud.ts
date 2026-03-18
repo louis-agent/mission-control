@@ -108,11 +108,13 @@ function rowToTask(row: TaskRow): Task {
     title: row.title,
     description: row.description,
     status: row.status,
+    requiredCapabilities: fromJson<string[]>(row.requiredCapabilities),
     assigneeAgentId: row.assigneeAgentId,
     workflowId: row.workflowId,
     dependencies: fromJson<string[]>(row.dependencies),
     input: fromJson<Record<string, unknown>>(row.input),
     output: fromJson<Record<string, unknown>>(row.output),
+    errorMessage: row.errorMessage ?? null,
     createdAt: row.createdAt as Date,
     updatedAt: row.updatedAt as Date,
   };
@@ -125,11 +127,13 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     title: input.title,
     description: input.description,
     status: input.status,
+    requiredCapabilities: toJson(input.requiredCapabilities),
     assigneeAgentId: input.assigneeAgentId,
     workflowId: input.workflowId,
     dependencies: toJson(input.dependencies),
     input: toJson(input.input),
     output: toJson(input.output),
+    errorMessage: input.errorMessage ?? null,
     createdAt: now,
     updatedAt: now,
   }).run();
@@ -150,11 +154,13 @@ export function updateTask(db: DB, id: string, input: UpdateTaskInput): Task | n
   if (input.title !== undefined) updates.title = input.title;
   if (input.description !== undefined) updates.description = input.description;
   if (input.status !== undefined) updates.status = input.status;
+  if (input.requiredCapabilities !== undefined) updates.requiredCapabilities = toJson(input.requiredCapabilities);
   if (input.assigneeAgentId !== undefined) updates.assigneeAgentId = input.assigneeAgentId;
   if (input.workflowId !== undefined) updates.workflowId = input.workflowId;
   if (input.dependencies !== undefined) updates.dependencies = toJson(input.dependencies);
   if (input.input !== undefined) updates.input = toJson(input.input);
   if (input.output !== undefined) updates.output = toJson(input.output);
+  if (input.errorMessage !== undefined) updates.errorMessage = input.errorMessage;
   db.update(tasks).set(updates).where(eq(tasks.id, id)).run();
   return getTaskById(db, id);
 }
@@ -162,6 +168,23 @@ export function updateTask(db: DB, id: string, input: UpdateTaskInput): Task | n
 export function deleteTask(db: DB, id: string): boolean {
   const result = db.delete(tasks).where(eq(tasks.id, id)).run();
   return result.changes > 0;
+}
+
+// Return all pending tasks in FIFO order (oldest first)
+export function listPendingTasks(db: DB): Task[] {
+  return db.select().from(tasks)
+    .where(eq(tasks.status, 'pending'))
+    .all()
+    .map(rowToTask)
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+}
+
+// Return tasks by status
+export function listTasksByStatus(db: DB, status: Task['status']): Task[] {
+  return db.select().from(tasks)
+    .where(eq(tasks.status, status))
+    .all()
+    .map(rowToTask);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

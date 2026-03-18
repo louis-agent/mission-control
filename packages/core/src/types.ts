@@ -20,11 +20,13 @@ export interface Task {
   title: string;
   description: string;
   status: TaskStatus;
+  requiredCapabilities: string[];
   assigneeAgentId: string | null;
   workflowId: string | null;
   dependencies: string[];
   input: Record<string, unknown>;
   output: Record<string, unknown>;
+  errorMessage: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
