@@ -20,6 +20,7 @@ export function runMigrations(sqlite: Database.Database) {
       capabilities TEXT NOT NULL DEFAULT '[]',
       status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'busy', 'offline')),
       metadata TEXT NOT NULL DEFAULT '{}',
+      last_heartbeat_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );

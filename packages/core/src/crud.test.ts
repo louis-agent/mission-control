@@ -3,6 +3,7 @@ import { createDb } from './db.js';
 import type { DB } from './db.js';
 import {
   createAgent, getAgentById, listAgents, updateAgent, deleteAgent,
+  listAgentsByCapability, heartbeatAgent,
   createTask, getTaskById, listTasks, updateTask, deleteTask,
   createWorkflow, getWorkflowById, listWorkflows, updateWorkflow, deleteWorkflow,
   createExecutionRun, getExecutionRunById, listExecutionRuns, updateExecutionRun, deleteExecutionRun,
@@ -78,6 +79,63 @@ describe('Agent CRUD', () => {
     updateAgent(db, 'agent-1', { capabilities: ['read', 'write', 'execute'] });
     const result = getAgentById(db, 'agent-1');
     expect(result?.capabilities).toEqual(['read', 'write', 'execute']);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Agent registry (capability query + heartbeat)
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe('Agent registry', () => {
+  const base = {
+    id: 'agent-1',
+    name: 'Alpha',
+    capabilities: ['search', 'write'],
+    status: 'idle' as const,
+    metadata: {},
+  };
+
+  it('agent has null lastHeartbeatAt after creation', () => {
+    const agent = createAgent(db, base);
+    expect(agent.lastHeartbeatAt).toBeNull();
+  });
+
+  it('listAgentsByCapability returns only matching agents', () => {
+    createAgent(db, base);
+    createAgent(db, { ...base, id: 'agent-2', name: 'Beta', capabilities: ['code-review', 'write'] });
+    createAgent(db, { ...base, id: 'agent-3', name: 'Gamma', capabilities: ['read'] });
+
+    const writeAgents = listAgentsByCapability(db, 'write');
+    expect(writeAgents).toHaveLength(2);
+    expect(writeAgents.map(a => a.id)).toContain('agent-1');
+    expect(writeAgents.map(a => a.id)).toContain('agent-2');
+
+    const readAgents = listAgentsByCapability(db, 'read');
+    expect(readAgents).toHaveLength(1);
+    expect(readAgents[0].id).toBe('agent-3');
+  });
+
+  it('listAgentsByCapability returns empty array when no match', () => {
+    createAgent(db, base);
+    expect(listAgentsByCapability(db, 'nonexistent')).toEqual([]);
+  });
+
+  it('heartbeatAgent updates lastHeartbeatAt timestamp', () => {
+    createAgent(db, base);
+    const before = Date.now();
+    const result = heartbeatAgent(db, 'agent-1');
+    const after = Date.now();
+
+    expect(result).not.toBeNull();
+    expect(result!.lastHeartbeatAt).toBeInstanceOf(Date);
+    // SQLite stores timestamps at second precision; allow 1s slack on lower bound
+    const ts = result!.lastHeartbeatAt!.getTime();
+    expect(ts).toBeGreaterThanOrEqual(before - 1000);
+    expect(ts).toBeLessThanOrEqual(after + 1000);
+  });
+
+  it('heartbeatAgent returns null for nonexistent agent', () => {
+    expect(heartbeatAgent(db, 'nonexistent')).toBeNull();
   });
 });
 

@@ -40,6 +40,8 @@ export {
   listAgents,
   updateAgent,
   deleteAgent,
+  listAgentsByCapability,
+  heartbeatAgent,
   createTask,
   getTaskById,
   listTasks,

@@ -7,6 +7,7 @@ export const agents = sqliteTable('agents', {
   capabilities: text('capabilities').notNull().default('[]'), // JSON array
   status: text('status', { enum: ['idle', 'busy', 'offline'] }).notNull().default('idle'),
   metadata: text('metadata').notNull().default('{}'), // JSON object
+  lastHeartbeatAt: integer('last_heartbeat_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });

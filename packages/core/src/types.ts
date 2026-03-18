@@ -10,6 +10,7 @@ export interface Agent {
   capabilities: string[];
   status: AgentStatus;
   metadata: Record<string, unknown>;
+  lastHeartbeatAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -72,7 +73,7 @@ export interface Event {
 }
 
 // Input types for create/update operations
-export type CreateAgentInput = Omit<Agent, 'createdAt' | 'updatedAt'>;
+export type CreateAgentInput = Omit<Agent, 'createdAt' | 'updatedAt' | 'lastHeartbeatAt'>;
 export type UpdateAgentInput = Partial<Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>>;
 
 export type CreateTaskInput = Omit<Task, 'createdAt' | 'updatedAt'>;

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, like } from 'drizzle-orm';
 import type { DB } from './db.js';
 import { agents, tasks, workflows, executionRuns, events } from './schema.js';
 import type {
@@ -34,6 +34,7 @@ function rowToAgent(row: AgentRow): Agent {
     capabilities: fromJson<string[]>(row.capabilities),
     status: row.status,
     metadata: fromJson<Record<string, unknown>>(row.metadata),
+    lastHeartbeatAt: (row.lastHeartbeatAt as Date | null) ?? null,
     createdAt: row.createdAt as Date,
     updatedAt: row.updatedAt as Date,
   };
@@ -47,6 +48,7 @@ export function createAgent(db: DB, input: CreateAgentInput): Agent {
     capabilities: toJson(input.capabilities),
     status: input.status,
     metadata: toJson(input.metadata),
+    lastHeartbeatAt: null,
     createdAt: now,
     updatedAt: now,
   }).run();
@@ -75,6 +77,23 @@ export function updateAgent(db: DB, id: string, input: UpdateAgentInput): Agent 
 export function deleteAgent(db: DB, id: string): boolean {
   const result = db.delete(agents).where(eq(agents.id, id)).run();
   return result.changes > 0;
+}
+
+export function listAgentsByCapability(db: DB, capability: string): Agent[] {
+  // capabilities is stored as a JSON array; use LIKE to match the capability string
+  return db.select().from(agents)
+    .where(like(agents.capabilities, `%"${capability}"%`))
+    .all()
+    .map(rowToAgent);
+}
+
+export function heartbeatAgent(db: DB, id: string): Agent | null {
+  const now = new Date();
+  db.update(agents)
+    .set({ lastHeartbeatAt: now, updatedAt: now })
+    .where(eq(agents.id, id))
+    .run();
+  return getAgentById(db, id);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
