@@ -15,6 +15,7 @@ import { createAlertsApp } from './alerts.js';
 import { createPluginManagerApp } from './plugin-manager.js';
 import { createStorageApp } from './storage-api.js';
 import { createGitHubApp } from './github.js';
+import { createSlackApp } from './slack.js';
 import { initTracing, shutdownTracing } from './tracing.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { rateLimitMiddleware } from './middleware/rate-limiter.js';
@@ -40,6 +41,12 @@ const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET ?? '';
 if (GITHUB_WEBHOOK_SECRET) {
   // Register before express.json() to preserve raw body for HMAC
   app.use(createGitHubApp(eventBus, { webhookSecret: GITHUB_WEBHOOK_SECRET }));
+}
+
+const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET ?? '';
+if (SLACK_SIGNING_SECRET) {
+  // Register before express.json() to preserve raw body for signature verification
+  app.use(createSlackApp(eventBus, { signingSecret: SLACK_SIGNING_SECRET }));
 }
 
 app.use(express.json());
