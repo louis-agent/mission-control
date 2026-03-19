@@ -106,3 +106,30 @@ export const webhooks = sqliteTable('webhooks', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
+
+// AlertRule: a threshold-based rule that fires webhook notifications
+export const alertRules = sqliteTable('alert_rules', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  // metric: one of task_queue_depth | failure_rate | agent_offline_count
+  metric: text('metric').notNull(),
+  // operator: gt | gte | lt | lte
+  operator: text('operator', { enum: ['gt', 'gte', 'lt', 'lte'] }).notNull(),
+  threshold: integer('threshold').notNull(),
+  // webhookUrl to POST when alert fires / resolves
+  webhookUrl: text('webhook_url').notNull(),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
+
+// AlertState: tracks whether each rule is currently firing
+export const alertStates = sqliteTable('alert_states', {
+  ruleId: text('rule_id').primaryKey(),
+  // status: ok | firing
+  status: text('status', { enum: ['ok', 'firing'] }).notNull().default('ok'),
+  lastValue: integer('last_value').notNull().default(0),
+  firedAt: integer('fired_at', { mode: 'timestamp' }),
+  resolvedAt: integer('resolved_at', { mode: 'timestamp' }),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});

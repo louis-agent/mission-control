@@ -9,11 +9,18 @@ import { createApiKeysApp } from './api-keys.js';
 import { createAuditLogApp } from './audit-log.js';
 import { createWebhooksApp } from './webhooks.js';
 import { createOpenApiApp } from './openapi.js';
+import { createMetricsApp } from './metrics.js';
+import { createDashboardApp } from './dashboard.js';
+import { createAlertsApp } from './alerts.js';
+import { initTracing, shutdownTracing } from './tracing.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { rateLimitMiddleware } from './middleware/rate-limiter.js';
 import { createAuditLoggerMiddleware } from './middleware/audit-logger.js';
 import { errorHandler } from './errors.js';
 import { logger } from './logger.js';
+
+// Initialise OpenTelemetry before everything else (no-op if OTEL_ENABLED != true)
+initTracing();
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const DB_PATH = process.env.DB_PATH ?? './mission-control.db';
@@ -47,11 +54,13 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// ── Security middleware ───────────────────────────────────────────────────────
-// Health check is exempt from auth (registered before auth middleware)
+// ── Public endpoints (exempt from auth) ──────────────────────────────────────
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok' });
 });
+
+// /metrics is typically scraped by Prometheus (no auth to avoid token leakage)
+app.use(createMetricsApp(db));
 
 const DISABLE_AUTH = process.env.DISABLE_AUTH === 'true';
 if (!DISABLE_AUTH) {
@@ -68,6 +77,8 @@ app.use(createWorkflowRunnerApp(db));
 app.use(createApiKeysApp(db));
 app.use(createAuditLogApp(db));
 app.use(createWebhooksApp(db));
+app.use(createDashboardApp(db));
+app.use(createAlertsApp(db));
 app.use(createOpenApiApp());
 
 // ── Centralised error handler (must be last) ──────────────────────────────────
@@ -82,11 +93,12 @@ const server = app.listen(PORT, () => {
 function shutdown(signal: string) {
   logger.info({ signal }, 'Shutdown signal received');
 
-  server.close((err) => {
+  server.close(async (err) => {
     if (err) {
       logger.error({ err }, 'Error during server close');
       process.exit(1);
     }
+    await shutdownTracing();
     logger.info('Server closed cleanly');
     process.exit(0);
   });

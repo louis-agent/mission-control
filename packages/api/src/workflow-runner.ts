@@ -11,9 +11,13 @@ import {
   rejectStep,
   listTimedOutTasks,
   listTimedOutRuns,
+  listTasksByExecutionRun,
   updateTask,
   InvalidTransitionError,
   type DB,
+  type ExecutionRun,
+  type StepResult,
+  type Task,
 } from '@mission-control/core';
 
 export function createWorkflowRunnerApp(db: DB): Application {
@@ -149,6 +153,19 @@ export function createWorkflowRunnerApp(db: DB): Application {
     });
   });
 
+  // GET /execution-runs/:id/timeline — ordered list of events for a run
+  app.get('/execution-runs/:id/timeline', (req: Request<{ id: string }>, res: Response) => {
+    const run = getExecutionRunById(db, req.params.id);
+    if (!run) {
+      res.status(404).json({ error: 'ExecutionRun not found' });
+      return;
+    }
+
+    const tasks = listTasksByExecutionRun(db, req.params.id);
+    const events = buildTimeline(run, tasks);
+    res.json({ runId: run.id, events });
+  });
+
   // GET /workflows/:id/validate — dry-run validation
   app.get('/workflows/:id/validate', (req: Request<{ id: string }>, res: Response) => {
     const workflow = getWorkflowById(db, req.params.id);
@@ -163,4 +180,106 @@ export function createWorkflowRunnerApp(db: DB): Application {
   });
 
   return app;
+}
+
+// ── Timeline builder ──────────────────────────────────────────────────────────
+
+interface TimelineEvent {
+  timestamp: string;
+  type: string;
+  stepId: string | null;
+  taskId: string | null;
+  detail: string;
+  status?: string;
+}
+
+function buildTimeline(run: ExecutionRun, tasks: Task[]): TimelineEvent[] {
+  const events: TimelineEvent[] = [];
+
+  events.push({
+    timestamp: run.createdAt.toISOString(),
+    type: 'run.created',
+    stepId: null,
+    taskId: null,
+    detail: `Execution run created for workflow ${run.workflowId}`,
+    status: run.status,
+  });
+
+  if (run.startedAt) {
+    events.push({
+      timestamp: run.startedAt.toISOString(),
+      type: 'run.started',
+      stepId: null,
+      taskId: null,
+      detail: 'Execution run started',
+    });
+  }
+
+  // Task-level events sorted by createdAt
+  const sortedTasks = [...tasks].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+  for (const task of sortedTasks) {
+    events.push({
+      timestamp: task.createdAt.toISOString(),
+      type: 'task.created',
+      stepId: task.stepId,
+      taskId: task.id,
+      detail: `Task "${task.title}" created`,
+      status: task.status,
+    });
+
+    if (task.status !== 'pending') {
+      events.push({
+        timestamp: task.updatedAt.toISOString(),
+        type: `task.${task.status}`,
+        stepId: task.stepId,
+        taskId: task.id,
+        detail: task.errorMessage
+          ? `Task "${task.title}" ${task.status}: ${task.errorMessage}`
+          : `Task "${task.title}" ${task.status}`,
+        status: task.status,
+      });
+    }
+  }
+
+  // Step results from the run
+  for (const result of (run.stepResults as StepResult[])) {
+    const matchingTask = tasks.find((t) => t.stepId === result.stepId);
+    const ts = matchingTask?.updatedAt.toISOString() ?? run.updatedAt.toISOString();
+    events.push({
+      timestamp: ts,
+      type: `step.${result.status}`,
+      stepId: result.stepId,
+      taskId: matchingTask?.id ?? null,
+      detail: result.error
+        ? `Step ${result.stepId} ${result.status}: ${result.error}`
+        : `Step ${result.stepId} ${result.status}`,
+      status: result.status,
+    });
+  }
+
+  if (run.completedAt) {
+    events.push({
+      timestamp: run.completedAt.toISOString(),
+      type: 'run.completed',
+      stepId: null,
+      taskId: null,
+      detail: 'Execution run completed',
+      status: 'completed',
+    });
+  }
+
+  if (run.cancelledAt) {
+    events.push({
+      timestamp: run.cancelledAt.toISOString(),
+      type: 'run.cancelled',
+      stepId: null,
+      taskId: null,
+      detail: 'Execution run cancelled',
+      status: 'cancelled',
+    });
+  }
+
+  // Sort all events chronologically
+  return events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 }

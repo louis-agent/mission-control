@@ -136,4 +136,28 @@ export function runMigrations(sqlite: Database.Database) {
       updated_at INTEGER NOT NULL
     );
   `);
+
+  // Phase 7: Observability — alert rules and state
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS alert_rules (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      metric TEXT NOT NULL,
+      operator TEXT NOT NULL CHECK (operator IN ('gt', 'gte', 'lt', 'lte')),
+      threshold INTEGER NOT NULL,
+      webhook_url TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS alert_states (
+      rule_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'ok' CHECK (status IN ('ok', 'firing')),
+      last_value INTEGER NOT NULL DEFAULT 0,
+      fired_at INTEGER,
+      resolved_at INTEGER,
+      updated_at INTEGER NOT NULL
+    );
+  `);
 }

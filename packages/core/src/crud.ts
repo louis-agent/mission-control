@@ -7,3 +7,4 @@ export * from './crud-api-keys.js';
 export * from './crud-audit-log.js';
 export * from './workflow-engine.js';
 export * from './crud-webhooks.js';
+export * from './crud-alerts.js';

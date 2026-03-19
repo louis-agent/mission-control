@@ -106,6 +106,24 @@ export {
   updateWebhook,
   deleteWebhook,
   listActiveWebhooksForEvent,
+  // Alerts
+  createAlertRule,
+  getAlertRuleById,
+  listAlertRules,
+  updateAlertRule,
+  deleteAlertRule,
+  getAlertState,
+  listAlertStates,
+  upsertAlertState,
 } from './crud.js';
 
 export type { AuditLogFilter } from './crud-audit-log.js';
+export type {
+  AlertMetric,
+  AlertOperator,
+  AlertStatus,
+  AlertRule,
+  AlertState,
+  CreateAlertRuleInput,
+  UpdateAlertRuleInput,
+} from './crud-alerts.js';
