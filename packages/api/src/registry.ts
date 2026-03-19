@@ -1,4 +1,5 @@
-import express, { type Application, type Request, type Response } from 'express';
+import express, { type Application, type Request, type Response, type NextFunction } from 'express';
+import { ZodError } from 'zod';
 import {
   createAgent,
   getAgentById,
@@ -9,25 +10,27 @@ import {
   heartbeatAgent,
   type DB,
 } from '@mission-control/core';
+import { CreateAgentSchema, UpdateAgentSchema } from './validation.js';
+
+function replyZodError(res: Response, err: ZodError): void {
+  res.status(400).json({
+    error: { code: 'VALIDATION_ERROR', message: 'Request validation failed', details: err.issues },
+  });
+}
 
 export function createRegistryApp(db: DB): Application {
   const app = express();
   app.use(express.json());
 
   // POST /agents — register a new agent
-  app.post('/agents', (req: Request, res: Response) => {
-    const { id, name, capabilities, status, metadata } = req.body as {
-      id?: string;
-      name?: string;
-      capabilities?: string[];
-      status?: string;
-      metadata?: Record<string, unknown>;
-    };
-
-    if (!id || !name) {
-      res.status(400).json({ error: 'id and name are required' });
+  app.post('/agents', (req: Request, res: Response, next: NextFunction) => {
+    const parsed = CreateAgentSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      replyZodError(res, parsed.error);
       return;
     }
+
+    const { id, name, capabilities, status, metadata } = parsed.data;
 
     if (getAgentById(db, id)) {
       res.status(409).json({ error: `Agent with id '${id}' already exists` });
@@ -38,7 +41,7 @@ export function createRegistryApp(db: DB): Application {
       id,
       name,
       capabilities: capabilities ?? [],
-      status: (status as 'idle' | 'busy' | 'offline') ?? 'idle',
+      status: status ?? 'idle',
       metadata: metadata ?? {},
     });
 
@@ -46,12 +49,16 @@ export function createRegistryApp(db: DB): Application {
   });
 
   // GET /agents — list all agents, optional ?capability= filter
-  app.get('/agents', (req: Request, res: Response) => {
+  app.get('/agents', (req: Request, res: Response, next: NextFunction) => {
     const { capability } = req.query as { capability?: string };
-    const result = capability
-      ? listAgentsByCapability(db, capability)
-      : listAgents(db);
-    res.json(result);
+    try {
+      const result = capability
+        ? listAgentsByCapability(db, capability)
+        : listAgents(db);
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
   });
 
   // GET /agents/:id — get agent by id
@@ -65,14 +72,20 @@ export function createRegistryApp(db: DB): Application {
   });
 
   // PATCH /agents/:id — update agent fields
-  app.patch('/agents/:id', (req: Request<{ id: string }>, res: Response) => {
+  app.patch('/agents/:id', (req: Request<{ id: string }>, res: Response, next: NextFunction) => {
     const existing = getAgentById(db, req.params.id);
     if (!existing) {
       res.status(404).json({ error: 'Agent not found' });
       return;
     }
 
-    const updated = updateAgent(db, req.params.id, req.body as Parameters<typeof updateAgent>[2]);
+    const parsed = UpdateAgentSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      replyZodError(res, parsed.error);
+      return;
+    }
+
+    const updated = updateAgent(db, req.params.id, parsed.data);
     res.json(updated);
   });
 

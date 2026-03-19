@@ -24,6 +24,12 @@ export type {
   CreateExecutionRunInput,
   UpdateExecutionRunInput,
   CreateEventInput,
+  ApiKey,
+  ApiKeyRole,
+  AuditLogEntry,
+  AuditActorType,
+  CreateApiKeyInput,
+  CreateAuditLogInput,
 } from './types.js';
 
 // Schema
@@ -54,6 +60,8 @@ export {
   listPendingTasks,
   listTasksByStatus,
   listTasksByExecutionRun,
+  listDeadLetterTasks,
+  requeueTaskForRetry,
   createWorkflow,
   getWorkflowById,
   listWorkflows,
@@ -67,6 +75,16 @@ export {
   createEvent,
   getEventById,
   listEvents,
+  // API keys
+  generateApiKey,
+  createApiKey,
+  getApiKeyByPlaintext,
+  getApiKeyById,
+  listApiKeys,
+  revokeApiKey,
+  // Audit log
+  createAuditLogEntry,
+  listAuditLog,
   // Workflow engine
   validateWorkflow,
   startExecution,
@@ -74,3 +92,5 @@ export {
   cancelExecution,
   InvalidTransitionError,
 } from './crud.js';
+
+export type { AuditLogFilter } from './crud-audit-log.js';

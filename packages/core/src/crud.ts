@@ -3,4 +3,6 @@ export * from './crud-tasks.js';
 export * from './crud-workflows.js';
 export * from './crud-execution-runs.js';
 export * from './crud-events.js';
+export * from './crud-api-keys.js';
+export * from './crud-audit-log.js';
 export * from './workflow-engine.js';

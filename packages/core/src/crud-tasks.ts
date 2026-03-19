@@ -21,6 +21,9 @@ function rowToTask(row: TaskRow): Task {
     input: fromJson<Record<string, unknown>>(row.input),
     output: fromJson<Record<string, unknown>>(row.output),
     errorMessage: row.errorMessage ?? null,
+    maxRetries: row.maxRetries ?? 0,
+    retryCount: row.retryCount ?? 0,
+    retryDelay: row.retryDelay ?? 1000,
     createdAt: row.createdAt as Date,
     updatedAt: row.updatedAt as Date,
   };
@@ -42,6 +45,9 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     input: toJson(input.input),
     output: toJson(input.output),
     errorMessage: input.errorMessage ?? null,
+    maxRetries: input.maxRetries ?? 0,
+    retryCount: input.retryCount ?? 0,
+    retryDelay: input.retryDelay ?? 1000,
     createdAt: now,
     updatedAt: now,
   }).run();
@@ -71,6 +77,9 @@ export function updateTask(db: DB, id: string, input: UpdateTaskInput): Task | n
   if (input.input !== undefined) updates.input = toJson(input.input);
   if (input.output !== undefined) updates.output = toJson(input.output);
   if (input.errorMessage !== undefined) updates.errorMessage = input.errorMessage;
+  if (input.maxRetries !== undefined) updates.maxRetries = input.maxRetries;
+  if (input.retryCount !== undefined) updates.retryCount = input.retryCount;
+  if (input.retryDelay !== undefined) updates.retryDelay = input.retryDelay;
   db.update(tasks).set(updates).where(eq(tasks.id, id)).run();
   return getTaskById(db, id);
 }
@@ -100,4 +109,32 @@ export function listTasksByExecutionRun(db: DB, executionRunId: string): Task[] 
     .where(eq(tasks.executionRunId, executionRunId))
     .all()
     .map(rowToTask);
+}
+
+export function listDeadLetterTasks(db: DB): Task[] {
+  return db.select().from(tasks)
+    .where(eq(tasks.status, 'dead_letter'))
+    .all()
+    .map(rowToTask)
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+}
+
+/**
+ * Attempt to requeue a failed task for retry.
+ * Increments retryCount; moves to dead_letter if retries exhausted.
+ * Returns the updated task.
+ */
+export function requeueTaskForRetry(db: DB, id: string, errorMessage: string): Task | null {
+  const task = getTaskById(db, id);
+  if (!task) return null;
+
+  const nextRetryCount = task.retryCount + 1;
+  const exhausted = nextRetryCount > task.maxRetries;
+
+  return updateTask(db, id, {
+    status: exhausted ? 'dead_letter' : 'pending',
+    retryCount: nextRetryCount,
+    assigneeAgentId: null,
+    errorMessage,
+  });
 }

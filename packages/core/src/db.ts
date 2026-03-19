@@ -81,4 +81,32 @@ export function runMigrations(sqlite: Database.Database) {
   addIfMissing('ALTER TABLE tasks ADD COLUMN execution_run_id TEXT');
   addIfMissing('ALTER TABLE tasks ADD COLUMN step_id TEXT');
   addIfMissing('ALTER TABLE execution_runs ADD COLUMN cancelled_at INTEGER');
+  addIfMissing('ALTER TABLE tasks ADD COLUMN max_retries INTEGER NOT NULL DEFAULT 0');
+  addIfMissing('ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0');
+  addIfMissing('ALTER TABLE tasks ADD COLUMN retry_delay INTEGER NOT NULL DEFAULT 1000');
+
+  // Security tables
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      hashed_key TEXT NOT NULL UNIQUE,
+      agent_id TEXT,
+      role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin', 'operator', 'agent', 'viewer')),
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER,
+      revoked_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id TEXT PRIMARY KEY,
+      actor_id TEXT,
+      actor_type TEXT NOT NULL CHECK (actor_type IN ('user', 'agent', 'system')),
+      action TEXT NOT NULL,
+      resource_type TEXT NOT NULL,
+      resource_id TEXT,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      timestamp INTEGER NOT NULL
+    );
+  `);
 }

@@ -1,6 +1,6 @@
 // Inferred types from schema
 export type AgentStatus = 'idle' | 'busy' | 'offline';
-export type TaskStatus = 'pending' | 'assigned' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type TaskStatus = 'pending' | 'assigned' | 'running' | 'completed' | 'failed' | 'cancelled' | 'dead_letter';
 export type WorkflowStatus = 'pending' | 'running' | 'completed' | 'failed';
 export type ExecutionRunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -29,6 +29,9 @@ export interface Task {
   input: Record<string, unknown>;
   output: Record<string, unknown>;
   errorMessage: string | null;
+  maxRetries: number;
+  retryCount: number;
+  retryDelay: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -79,13 +82,44 @@ export interface Event {
   createdAt: Date;
 }
 
+export type ApiKeyRole = 'admin' | 'operator' | 'agent' | 'viewer';
+export type AuditActorType = 'user' | 'agent' | 'system';
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  hashedKey: string;
+  agentId: string | null;
+  role: ApiKeyRole;
+  createdAt: Date;
+  expiresAt: Date | null;
+  revokedAt: Date | null;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actorId: string | null;
+  actorType: AuditActorType;
+  action: string;
+  resourceType: string;
+  resourceId: string | null;
+  metadata: Record<string, unknown>;
+  timestamp: Date;
+}
+
+export type CreateApiKeyInput = Omit<ApiKey, 'createdAt'> & { createdAt?: Date };
+export type CreateAuditLogInput = Omit<AuditLogEntry, 'id'> & { id?: string };
+
 // Input types for create/update operations
 export type CreateAgentInput = Omit<Agent, 'createdAt' | 'updatedAt' | 'lastHeartbeatAt'>;
 export type UpdateAgentInput = Partial<Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>>;
 
-export type CreateTaskInput = Omit<Task, 'createdAt' | 'updatedAt' | 'executionRunId' | 'stepId'> & {
+export type CreateTaskInput = Omit<Task, 'createdAt' | 'updatedAt' | 'executionRunId' | 'stepId' | 'maxRetries' | 'retryCount' | 'retryDelay'> & {
   executionRunId?: string | null;
   stepId?: string | null;
+  maxRetries?: number;
+  retryCount?: number;
+  retryDelay?: number;
 };
 export type UpdateTaskInput = Partial<Omit<Task, 'id' | 'createdAt' | 'updatedAt'>>;
 

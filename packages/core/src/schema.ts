@@ -27,7 +27,7 @@ export const tasks = sqliteTable('tasks', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   description: text('description').notNull().default(''),
-  status: text('status', { enum: ['pending', 'assigned', 'running', 'completed', 'failed', 'cancelled'] }).notNull().default('pending'),
+  status: text('status', { enum: ['pending', 'assigned', 'running', 'completed', 'failed', 'cancelled', 'dead_letter'] }).notNull().default('pending'),
   requiredCapabilities: text('required_capabilities').notNull().default('[]'), // JSON array
   assigneeAgentId: text('assignee_agent_id'),
   workflowId: text('workflow_id'),
@@ -37,6 +37,9 @@ export const tasks = sqliteTable('tasks', {
   input: text('input').notNull().default('{}'), // JSON object
   output: text('output').notNull().default('{}'), // JSON object
   errorMessage: text('error_message'),
+  maxRetries: integer('max_retries').notNull().default(0),
+  retryCount: integer('retry_count').notNull().default(0),
+  retryDelay: integer('retry_delay').notNull().default(1000), // base delay in ms
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
@@ -62,4 +65,28 @@ export const events = sqliteTable('events', {
   payload: text('payload').notNull().default('{}'), // JSON object
   timestamp: integer('timestamp', { mode: 'timestamp' }).notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+// ApiKey: access credential with role for auth
+export const apiKeys = sqliteTable('api_keys', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  hashedKey: text('hashed_key').notNull().unique(),
+  agentId: text('agent_id'),
+  role: text('role', { enum: ['admin', 'operator', 'agent', 'viewer'] }).notNull().default('viewer'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }),
+  revokedAt: integer('revoked_at', { mode: 'timestamp' }),
+});
+
+// AuditLog: immutable record of state-changing operations
+export const auditLog = sqliteTable('audit_log', {
+  id: text('id').primaryKey(),
+  actorId: text('actor_id'),
+  actorType: text('actor_type', { enum: ['user', 'agent', 'system'] }).notNull(),
+  action: text('action').notNull(),
+  resourceType: text('resource_type').notNull(),
+  resourceId: text('resource_id'),
+  metadata: text('metadata').notNull().default('{}'), // JSON object
+  timestamp: integer('timestamp', { mode: 'timestamp' }).notNull(),
 });
