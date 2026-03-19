@@ -1,0 +1,48 @@
+version: '3.9'
+
+services:
+  api:
+    build: .
+    image: mission-control:latest
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      DB_PATH: /data/mission-control.db
+      DISABLE_AUTH: "false"
+      NODE_ENV: production
+    volumes:
+      - mc-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # PostgreSQL for production use or integration testing.
+  # Start with: docker compose --profile postgres up -d postgres
+  # Test URL: postgres://mc:mc@localhost:5432/mission_control
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: mc
+      POSTGRES_PASSWORD: mc
+      POSTGRES_DB: mission_control
+    volumes:
+      - mc-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mc -d mission_control"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mc-data:
+    driver: local
+  mc-pg-data:
+    driver: local

@@ -1,0 +1,25 @@
+{
+  "name": "@mission-control/cli",
+  "version": "0.1.0",
+  "description": "CLI tool for Mission Control",
+  "type": "module",
+  "bin": {
+    "mc": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@mission-control/sdk": "workspace:*",
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  }
+}

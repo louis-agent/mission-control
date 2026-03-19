@@ -143,9 +143,7 @@ describe('EventBus unsubscribe', () => {
   it('handler that unsubscribes itself mid-dispatch does not affect sibling handlers', () => {
     const received1: Event[] = [];
     const received2: Event[] = [];
-    let unsub1: () => void;
-
-    unsub1 = bus.subscribe('ev', () => {
+    const unsub1 = bus.subscribe('ev', () => {
       received1.push({ type: 'ev' } as Event);
       unsub1();
     });

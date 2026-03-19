@@ -283,3 +283,105 @@ describe('POST /tasks/:id/fail', () => {
     expect(res.status).toBe(409);
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Priority-based dispatch
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe('Priority-based dispatch', () => {
+  beforeEach(() => {
+    createAgent(db, { id: 'a1', name: 'Worker', capabilities: [], status: 'idle', metadata: {} });
+  });
+
+  it('dispatches critical task before high-priority task (submitted later)', async () => {
+    await request(app).post('/tasks').send({ id: 'low', title: 'Low', priority: 'low' });
+    await request(app).post('/tasks').send({ id: 'critical', title: 'Critical', priority: 'critical' });
+
+    const res = await request(app).post('/tasks/dispatch');
+    expect(res.body.task.id).toBe('critical');
+  });
+
+  it('dispatches high before medium', async () => {
+    await request(app).post('/tasks').send({ id: 'med', title: 'Med', priority: 'medium' });
+    await request(app).post('/tasks').send({ id: 'hi', title: 'High', priority: 'high' });
+
+    const res = await request(app).post('/tasks/dispatch');
+    expect(res.body.task.id).toBe('hi');
+  });
+
+  it('uses FIFO within same priority', async () => {
+    await request(app).post('/tasks').send({ id: 't1', title: 'First', priority: 'medium' });
+    await request(app).post('/tasks').send({ id: 't2', title: 'Second', priority: 'medium' });
+
+    const res = await request(app).post('/tasks/dispatch');
+    expect(res.body.task.id).toBe('t1');
+  });
+
+  it('returns priority field in submitted task', async () => {
+    const res = await request(app).post('/tasks').send({ title: 'High Task', priority: 'high' });
+    expect(res.status).toBe(201);
+    expect(res.body.priority).toBe('high');
+  });
+
+  it('defaults priority to medium', async () => {
+    const res = await request(app).post('/tasks').send({ title: 'Default' });
+    expect(res.status).toBe(201);
+    expect(res.body.priority).toBe('medium');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Resource quotas
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe('Resource quotas', () => {
+  it('respects maxTasksPerAgent: does not assign more than limit to one agent', async () => {
+    const quotaApp = createQueueApp(db, { maxTasksPerAgent: 1 });
+    createAgent(db, { id: 'solo', name: 'Solo', capabilities: [], status: 'idle', metadata: {} });
+
+    await request(quotaApp).post('/tasks').send({ id: 't1', title: 'Task 1' });
+    await request(quotaApp).post('/tasks').send({ id: 't2', title: 'Task 2' });
+
+    // First dispatch succeeds
+    const r1 = await request(quotaApp).post('/tasks/dispatch');
+    expect(r1.body.dispatched).toBe(true);
+    expect(r1.body.task.assigneeAgentId).toBe('solo');
+
+    // Second dispatch: agent already has 1 task (at limit) → no dispatch
+    const r2 = await request(quotaApp).post('/tasks/dispatch');
+    expect(r2.body.dispatched).toBe(false);
+  });
+
+  it('respects globalConcurrencyLimit: queues tasks when limit reached', async () => {
+    const quotaApp = createQueueApp(db, { globalConcurrencyLimit: 1 });
+    createAgent(db, { id: 'a1', name: 'A1', capabilities: [], status: 'idle', metadata: {} });
+    createAgent(db, { id: 'a2', name: 'A2', capabilities: [], status: 'idle', metadata: {} });
+
+    await request(quotaApp).post('/tasks').send({ id: 't1', title: 'Task 1' });
+    await request(quotaApp).post('/tasks').send({ id: 't2', title: 'Task 2' });
+
+    const r1 = await request(quotaApp).post('/tasks/dispatch');
+    expect(r1.body.dispatched).toBe(true);
+
+    // Global limit reached (1 active task)
+    const r2 = await request(quotaApp).post('/tasks/dispatch');
+    expect(r2.body.dispatched).toBe(false);
+  });
+
+  it('allows dispatch again after a task completes (quota freed)', async () => {
+    const quotaApp = createQueueApp(db, { maxTasksPerAgent: 1 });
+    createAgent(db, { id: 'solo', name: 'Solo', capabilities: [], status: 'idle', metadata: {} });
+
+    await request(quotaApp).post('/tasks').send({ id: 't1', title: 'Task 1' });
+    await request(quotaApp).post('/tasks').send({ id: 't2', title: 'Task 2' });
+
+    // Dispatch and start first task
+    await request(quotaApp).post('/tasks/dispatch');
+    await request(quotaApp).post('/tasks/t1/start');
+    await request(quotaApp).post('/tasks/t1/complete').send({ output: {} });
+
+    // Now agent is free → second task can be dispatched
+    const r2 = await request(quotaApp).post('/tasks/dispatch');
+    expect(r2.body.dispatched).toBe(true);
+  });
+});

@@ -27,14 +27,21 @@ export const tasks = sqliteTable('tasks', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   description: text('description').notNull().default(''),
-  status: text('status', { enum: ['pending', 'assigned', 'running', 'completed', 'failed'] }).notNull().default('pending'),
+  status: text('status', { enum: ['pending', 'assigned', 'running', 'completed', 'failed', 'cancelled', 'dead_letter', 'awaiting_approval'] }).notNull().default('pending'),
+  priority: text('priority', { enum: ['critical', 'high', 'medium', 'low'] }).notNull().default('medium'),
   requiredCapabilities: text('required_capabilities').notNull().default('[]'), // JSON array
   assigneeAgentId: text('assignee_agent_id'),
   workflowId: text('workflow_id'),
+  executionRunId: text('execution_run_id'),
+  stepId: text('step_id'),
   dependencies: text('dependencies').notNull().default('[]'), // JSON array of task IDs
   input: text('input').notNull().default('{}'), // JSON object
   output: text('output').notNull().default('{}'), // JSON object
   errorMessage: text('error_message'),
+  maxRetries: integer('max_retries').notNull().default(0),
+  retryCount: integer('retry_count').notNull().default(0),
+  retryDelay: integer('retry_delay').notNull().default(1000), // base delay in ms
+  timeoutAt: integer('timeout_at', { mode: 'timestamp' }), // per-step timeout deadline
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
@@ -43,9 +50,13 @@ export const tasks = sqliteTable('tasks', {
 export const executionRuns = sqliteTable('execution_runs', {
   id: text('id').primaryKey(),
   workflowId: text('workflow_id').notNull(),
-  status: text('status', { enum: ['pending', 'running', 'completed', 'failed'] }).notNull().default('pending'),
+  parentRunId: text('parent_run_id'), // set for sub-workflow runs
+  parentStepId: text('parent_step_id'), // the step in the parent run that spawned this
+  status: text('status', { enum: ['pending', 'running', 'completed', 'failed', 'cancelled'] }).notNull().default('pending'),
   startedAt: integer('started_at', { mode: 'timestamp' }),
   completedAt: integer('completed_at', { mode: 'timestamp' }),
+  cancelledAt: integer('cancelled_at', { mode: 'timestamp' }),
+  timeoutAt: integer('timeout_at', { mode: 'timestamp' }), // per-workflow timeout deadline
   stepResults: text('step_results').notNull().default('[]'), // JSON array
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
@@ -59,4 +70,83 @@ export const events = sqliteTable('events', {
   payload: text('payload').notNull().default('{}'), // JSON object
   timestamp: integer('timestamp', { mode: 'timestamp' }).notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+// ApiKey: access credential with role for auth
+export const apiKeys = sqliteTable('api_keys', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  hashedKey: text('hashed_key').notNull().unique(),
+  agentId: text('agent_id'),
+  role: text('role', { enum: ['admin', 'operator', 'agent', 'viewer'] }).notNull().default('viewer'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }),
+  revokedAt: integer('revoked_at', { mode: 'timestamp' }),
+});
+
+// AuditLog: immutable record of state-changing operations
+export const auditLog = sqliteTable('audit_log', {
+  id: text('id').primaryKey(),
+  actorId: text('actor_id'),
+  actorType: text('actor_type', { enum: ['user', 'agent', 'system'] }).notNull(),
+  action: text('action').notNull(),
+  resourceType: text('resource_type').notNull(),
+  resourceId: text('resource_id'),
+  metadata: text('metadata').notNull().default('{}'), // JSON object
+  timestamp: integer('timestamp', { mode: 'timestamp' }).notNull(),
+});
+
+// Webhook: registered HTTP endpoint for event delivery
+export const webhooks = sqliteTable('webhooks', {
+  id: text('id').primaryKey(),
+  url: text('url').notNull(),
+  events: text('events').notNull().default('[]'), // JSON array of event type patterns
+  secret: text('secret').notNull(),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
+
+// AlertRule: a threshold-based rule that fires webhook notifications
+export const alertRules = sqliteTable('alert_rules', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  // metric: one of task_queue_depth | failure_rate | agent_offline_count
+  metric: text('metric').notNull(),
+  // operator: gt | gte | lt | lte
+  operator: text('operator', { enum: ['gt', 'gte', 'lt', 'lte'] }).notNull(),
+  threshold: integer('threshold').notNull(),
+  // webhookUrl to POST when alert fires / resolves
+  webhookUrl: text('webhook_url').notNull(),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
+
+// AlertState: tracks whether each rule is currently firing
+export const alertStates = sqliteTable('alert_states', {
+  ruleId: text('rule_id').primaryKey(),
+  // status: ok | firing
+  status: text('status', { enum: ['ok', 'firing'] }).notNull().default('ok'),
+  lastValue: integer('last_value').notNull().default(0),
+  firedAt: integer('fired_at', { mode: 'timestamp' }),
+  resolvedAt: integer('resolved_at', { mode: 'timestamp' }),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
+
+// BackgroundJob: async task queued for off-request-path processing
+export const jobs = sqliteTable('jobs', {
+  id: text('id').primaryKey(),
+  // type: workflow_execution | webhook_delivery | metric_aggregation
+  type: text('type', { enum: ['workflow_execution', 'webhook_delivery', 'metric_aggregation'] }).notNull(),
+  // status: pending | running | completed | failed
+  status: text('status', { enum: ['pending', 'running', 'completed', 'failed'] }).notNull().default('pending'),
+  payload: text('payload').notNull().default('{}'), // JSON object
+  attempts: integer('attempts').notNull().default(0),
+  maxAttempts: integer('max_attempts').notNull().default(3),
+  errorMessage: text('error_message'),
+  claimedAt: integer('claimed_at', { mode: 'timestamp' }),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });

@@ -6,6 +6,7 @@ export const VERSION = '0.1.0';
 export type {
   AgentStatus,
   TaskStatus,
+  TaskPriority,
   WorkflowStatus,
   ExecutionRunStatus,
   Agent,
@@ -24,6 +25,15 @@ export type {
   CreateExecutionRunInput,
   UpdateExecutionRunInput,
   CreateEventInput,
+  ApiKey,
+  ApiKeyRole,
+  AuditLogEntry,
+  AuditActorType,
+  CreateApiKeyInput,
+  CreateAuditLogInput,
+  Webhook,
+  CreateWebhookInput,
+  UpdateWebhookInput,
 } from './types.js';
 
 // Schema
@@ -53,6 +63,10 @@ export {
   deleteTask,
   listPendingTasks,
   listTasksByStatus,
+  listTasksByExecutionRun,
+  listDeadLetterTasks,
+  listTimedOutTasks,
+  requeueTaskForRetry,
   createWorkflow,
   getWorkflowById,
   listWorkflows,
@@ -61,9 +75,94 @@ export {
   createExecutionRun,
   getExecutionRunById,
   listExecutionRuns,
+  listTimedOutRuns,
   updateExecutionRun,
   deleteExecutionRun,
   createEvent,
   getEventById,
   listEvents,
+  // API keys
+  generateApiKey,
+  createApiKey,
+  getApiKeyByPlaintext,
+  getApiKeyById,
+  listApiKeys,
+  revokeApiKey,
+  // Audit log
+  createAuditLogEntry,
+  listAuditLog,
+  // Workflow engine
+  validateWorkflow,
+  startExecution,
+  advanceExecution,
+  cancelExecution,
+  approveStep,
+  rejectStep,
+  InvalidTransitionError,
+  // Webhooks
+  createWebhook,
+  getWebhookById,
+  listWebhooks,
+  updateWebhook,
+  deleteWebhook,
+  listActiveWebhooksForEvent,
+  // Alerts
+  createAlertRule,
+  getAlertRuleById,
+  listAlertRules,
+  updateAlertRule,
+  deleteAlertRule,
+  getAlertState,
+  listAlertStates,
+  upsertAlertState,
 } from './crud.js';
+
+export { LocalStorageAdapter } from './storage.js';
+export type { StorageAdapter } from './storage.js';
+export { S3StorageAdapter } from './storage-s3.js';
+export type { S3StorageConfig } from './storage-s3.js';
+
+export { PluginRegistry } from './plugin.js';
+export type { TaskHandler } from './plugin.js';
+
+export { shellExecutorHandler } from './plugins/shell-executor.js';
+export { httpCallerHandler } from './plugins/http-caller.js';
+
+export type { AuditLogFilter } from './crud-audit-log.js';
+export type {
+  AlertMetric,
+  AlertOperator,
+  AlertStatus,
+  AlertRule,
+  AlertState,
+  CreateAlertRuleInput,
+  UpdateAlertRuleInput,
+} from './crud-alerts.js';
+
+// Background jobs
+export {
+  createJob,
+  getJobById,
+  listPendingJobs,
+  listJobs,
+  claimJob,
+  completeJob,
+  failJob,
+} from './crud-jobs.js';
+export type { Job, JobType, JobStatus, CreateJobInput } from './crud-jobs.js';
+
+// Repository layer (database-agnostic interfaces + adapters)
+export type {
+  AgentRepository,
+  TaskRepository,
+  WorkflowRepository,
+  ExecutionRunRepository,
+  EventRepository,
+  ApiKeyRepository,
+  AuditLogRepository,
+  WebhookRepository,
+  AlertRepository,
+  Repositories,
+} from './repository.js';
+export { createSqliteRepositories } from './repository-sqlite.js';
+export { createRepositories } from './db-factory.js';

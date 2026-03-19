@@ -1,0 +1,164 @@
+import { eq } from 'drizzle-orm';
+import type { DB } from './db.js';
+import { tasks } from './schema.js';
+import type { Task, CreateTaskInput, UpdateTaskInput } from './types.js';
+import { toJson, fromJson } from './json-utils.js';
+
+type TaskRow = typeof tasks.$inferSelect;
+
+function rowToTask(row: TaskRow): Task {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    priority: row.priority ?? 'medium',
+    requiredCapabilities: fromJson<string[]>(row.requiredCapabilities),
+    assigneeAgentId: row.assigneeAgentId,
+    workflowId: row.workflowId,
+    executionRunId: row.executionRunId ?? null,
+    stepId: row.stepId ?? null,
+    dependencies: fromJson<string[]>(row.dependencies),
+    input: fromJson<Record<string, unknown>>(row.input),
+    output: fromJson<Record<string, unknown>>(row.output),
+    errorMessage: row.errorMessage ?? null,
+    maxRetries: row.maxRetries ?? 0,
+    retryCount: row.retryCount ?? 0,
+    retryDelay: row.retryDelay ?? 1000,
+    timeoutAt: (row.timeoutAt as Date | null) ?? null,
+    createdAt: row.createdAt as Date,
+    updatedAt: row.updatedAt as Date,
+  };
+}
+
+export function createTask(db: DB, input: CreateTaskInput): Task {
+  const now = new Date();
+  db.insert(tasks).values({
+    id: input.id,
+    title: input.title,
+    description: input.description,
+    status: input.status,
+    priority: input.priority ?? 'medium',
+    requiredCapabilities: toJson(input.requiredCapabilities),
+    assigneeAgentId: input.assigneeAgentId,
+    workflowId: input.workflowId,
+    executionRunId: input.executionRunId ?? null,
+    stepId: input.stepId ?? null,
+    dependencies: toJson(input.dependencies),
+    input: toJson(input.input),
+    output: toJson(input.output),
+    errorMessage: input.errorMessage ?? null,
+    maxRetries: input.maxRetries ?? 0,
+    retryCount: input.retryCount ?? 0,
+    retryDelay: input.retryDelay ?? 1000,
+    timeoutAt: input.timeoutAt ?? null,
+    createdAt: now,
+    updatedAt: now,
+  }).run();
+  return getTaskById(db, input.id)!;
+}
+
+export function getTaskById(db: DB, id: string): Task | null {
+  const row = db.select().from(tasks).where(eq(tasks.id, id)).get();
+  return row ? rowToTask(row) : null;
+}
+
+export function listTasks(db: DB): Task[] {
+  return db.select().from(tasks).all().map(rowToTask);
+}
+
+export function updateTask(db: DB, id: string, input: UpdateTaskInput): Task | null {
+  const updates: Partial<TaskRow> = { updatedAt: new Date() };
+  if (input.title !== undefined) updates.title = input.title;
+  if (input.description !== undefined) updates.description = input.description;
+  if (input.status !== undefined) updates.status = input.status;
+  if (input.requiredCapabilities !== undefined) updates.requiredCapabilities = toJson(input.requiredCapabilities);
+  if (input.assigneeAgentId !== undefined) updates.assigneeAgentId = input.assigneeAgentId;
+  if (input.workflowId !== undefined) updates.workflowId = input.workflowId;
+  if (input.executionRunId !== undefined) updates.executionRunId = input.executionRunId;
+  if (input.stepId !== undefined) updates.stepId = input.stepId;
+  if (input.dependencies !== undefined) updates.dependencies = toJson(input.dependencies);
+  if (input.input !== undefined) updates.input = toJson(input.input);
+  if (input.output !== undefined) updates.output = toJson(input.output);
+  if (input.errorMessage !== undefined) updates.errorMessage = input.errorMessage;
+  if (input.maxRetries !== undefined) updates.maxRetries = input.maxRetries;
+  if (input.retryCount !== undefined) updates.retryCount = input.retryCount;
+  if (input.retryDelay !== undefined) updates.retryDelay = input.retryDelay;
+  if (input.priority !== undefined) updates.priority = input.priority;
+  if (input.timeoutAt !== undefined) updates.timeoutAt = input.timeoutAt;
+  db.update(tasks).set(updates).where(eq(tasks.id, id)).run();
+  return getTaskById(db, id);
+}
+
+export function deleteTask(db: DB, id: string): boolean {
+  const result = db.delete(tasks).where(eq(tasks.id, id)).run();
+  return result.changes > 0;
+}
+
+const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
+export function listPendingTasks(db: DB): Task[] {
+  return db.select().from(tasks)
+    .where(eq(tasks.status, 'pending'))
+    .all()
+    .map(rowToTask)
+    .sort((a, b) => {
+      const pa = PRIORITY_ORDER[a.priority] ?? 2;
+      const pb = PRIORITY_ORDER[b.priority] ?? 2;
+      if (pa !== pb) return pa - pb;
+      return a.createdAt.getTime() - b.createdAt.getTime();
+    });
+}
+
+/** List tasks that have timed out (timeoutAt in the past) and are still in-flight. */
+export function listTimedOutTasks(db: DB): Task[] {
+  const now = new Date();
+  return db.select().from(tasks).all().map(rowToTask).filter(
+    (t) =>
+      t.timeoutAt !== null &&
+      t.timeoutAt <= now &&
+      ['pending', 'assigned', 'running', 'awaiting_approval'].includes(t.status),
+  );
+}
+
+export function listTasksByStatus(db: DB, status: Task['status']): Task[] {
+  return db.select().from(tasks)
+    .where(eq(tasks.status, status))
+    .all()
+    .map(rowToTask);
+}
+
+export function listTasksByExecutionRun(db: DB, executionRunId: string): Task[] {
+  return db.select().from(tasks)
+    .where(eq(tasks.executionRunId, executionRunId))
+    .all()
+    .map(rowToTask);
+}
+
+export function listDeadLetterTasks(db: DB): Task[] {
+  return db.select().from(tasks)
+    .where(eq(tasks.status, 'dead_letter'))
+    .all()
+    .map(rowToTask)
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+}
+
+/**
+ * Attempt to requeue a failed task for retry.
+ * Increments retryCount; moves to dead_letter if retries exhausted.
+ * Returns the updated task.
+ */
+export function requeueTaskForRetry(db: DB, id: string, errorMessage: string): Task | null {
+  const task = getTaskById(db, id);
+  if (!task) return null;
+
+  const nextRetryCount = task.retryCount + 1;
+  const exhausted = nextRetryCount > task.maxRetries;
+
+  return updateTask(db, id, {
+    status: exhausted ? 'dead_letter' : 'pending',
+    retryCount: nextRetryCount,
+    assigneeAgentId: null,
+    errorMessage,
+  });
+}
