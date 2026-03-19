@@ -14,6 +14,7 @@ import { createDashboardApp } from './dashboard.js';
 import { createAlertsApp } from './alerts.js';
 import { createPluginManagerApp } from './plugin-manager.js';
 import { createStorageApp } from './storage-api.js';
+import { createGitHubApp } from './github.js';
 import { initTracing, shutdownTracing } from './tracing.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { rateLimitMiddleware } from './middleware/rate-limiter.js';
@@ -34,6 +35,13 @@ const eventBus = new EventBus(db);
 const storage = new LocalStorageAdapter(STORAGE_DIR);
 
 const app = express();
+
+const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET ?? '';
+if (GITHUB_WEBHOOK_SECRET) {
+  // Register before express.json() to preserve raw body for HMAC
+  app.use(createGitHubApp(eventBus, { webhookSecret: GITHUB_WEBHOOK_SECRET }));
+}
+
 app.use(express.json());
 
 // ── Request logging middleware ─────────────────────────────────────────────────
