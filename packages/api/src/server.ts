@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { createDb, EventBus } from '@mission-control/core';
+import { createDb, EventBus, LocalStorageAdapter } from '@mission-control/core';
 import { createSseApp } from './sse.js';
 import { createRegistryApp } from './registry.js';
 import { createQueueApp } from './queue.js';
@@ -13,6 +13,7 @@ import { createMetricsApp } from './metrics.js';
 import { createDashboardApp } from './dashboard.js';
 import { createAlertsApp } from './alerts.js';
 import { createPluginManagerApp } from './plugin-manager.js';
+import { createStorageApp } from './storage-api.js';
 import { initTracing, shutdownTracing } from './tracing.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { rateLimitMiddleware } from './middleware/rate-limiter.js';
@@ -26,9 +27,11 @@ initTracing();
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const DB_PATH = process.env.DB_PATH ?? './mission-control.db';
 const SHUTDOWN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_TIMEOUT_MS ?? '10000', 10);
+const STORAGE_DIR = process.env.STORAGE_DIR ?? './artifacts';
 
 const db = createDb(DB_PATH);
 const eventBus = new EventBus(db);
+const storage = new LocalStorageAdapter(STORAGE_DIR);
 
 const app = express();
 app.use(express.json());
@@ -81,6 +84,7 @@ app.use(createWebhooksApp(db));
 app.use(createDashboardApp(db));
 app.use(createAlertsApp(db));
 app.use(createPluginManagerApp());
+app.use(createStorageApp(storage));
 app.use(createOpenApiApp());
 
 // ── Centralised error handler (must be last) ──────────────────────────────────
