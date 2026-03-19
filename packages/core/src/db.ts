@@ -84,6 +84,12 @@ export function runMigrations(sqlite: Database.Database) {
   addIfMissing('ALTER TABLE tasks ADD COLUMN max_retries INTEGER NOT NULL DEFAULT 0');
   addIfMissing('ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0');
   addIfMissing('ALTER TABLE tasks ADD COLUMN retry_delay INTEGER NOT NULL DEFAULT 1000');
+  // Phase 6: priority, timeouts, approval
+  addIfMissing("ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'");
+  addIfMissing('ALTER TABLE tasks ADD COLUMN timeout_at INTEGER');
+  addIfMissing('ALTER TABLE execution_runs ADD COLUMN parent_run_id TEXT');
+  addIfMissing('ALTER TABLE execution_runs ADD COLUMN parent_step_id TEXT');
+  addIfMissing('ALTER TABLE execution_runs ADD COLUMN timeout_at INTEGER');
 
   // Security tables
   sqlite.exec(`
@@ -107,6 +113,19 @@ export function runMigrations(sqlite: Database.Database) {
       resource_id TEXT,
       metadata TEXT NOT NULL DEFAULT '{}',
       timestamp INTEGER NOT NULL
+    );
+  `);
+
+  // Developer experience tables
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS webhooks (
+      id TEXT PRIMARY KEY,
+      url TEXT NOT NULL,
+      events TEXT NOT NULL DEFAULT '[]',
+      secret TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
     );
   `);
 }

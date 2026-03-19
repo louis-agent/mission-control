@@ -27,7 +27,8 @@ export const tasks = sqliteTable('tasks', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   description: text('description').notNull().default(''),
-  status: text('status', { enum: ['pending', 'assigned', 'running', 'completed', 'failed', 'cancelled', 'dead_letter'] }).notNull().default('pending'),
+  status: text('status', { enum: ['pending', 'assigned', 'running', 'completed', 'failed', 'cancelled', 'dead_letter', 'awaiting_approval'] }).notNull().default('pending'),
+  priority: text('priority', { enum: ['critical', 'high', 'medium', 'low'] }).notNull().default('medium'),
   requiredCapabilities: text('required_capabilities').notNull().default('[]'), // JSON array
   assigneeAgentId: text('assignee_agent_id'),
   workflowId: text('workflow_id'),
@@ -40,6 +41,7 @@ export const tasks = sqliteTable('tasks', {
   maxRetries: integer('max_retries').notNull().default(0),
   retryCount: integer('retry_count').notNull().default(0),
   retryDelay: integer('retry_delay').notNull().default(1000), // base delay in ms
+  timeoutAt: integer('timeout_at', { mode: 'timestamp' }), // per-step timeout deadline
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
@@ -48,10 +50,13 @@ export const tasks = sqliteTable('tasks', {
 export const executionRuns = sqliteTable('execution_runs', {
   id: text('id').primaryKey(),
   workflowId: text('workflow_id').notNull(),
+  parentRunId: text('parent_run_id'), // set for sub-workflow runs
+  parentStepId: text('parent_step_id'), // the step in the parent run that spawned this
   status: text('status', { enum: ['pending', 'running', 'completed', 'failed', 'cancelled'] }).notNull().default('pending'),
   startedAt: integer('started_at', { mode: 'timestamp' }),
   completedAt: integer('completed_at', { mode: 'timestamp' }),
   cancelledAt: integer('cancelled_at', { mode: 'timestamp' }),
+  timeoutAt: integer('timeout_at', { mode: 'timestamp' }), // per-workflow timeout deadline
   stepResults: text('step_results').notNull().default('[]'), // JSON array
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
@@ -89,4 +94,15 @@ export const auditLog = sqliteTable('audit_log', {
   resourceId: text('resource_id'),
   metadata: text('metadata').notNull().default('{}'), // JSON object
   timestamp: integer('timestamp', { mode: 'timestamp' }).notNull(),
+});
+
+// Webhook: registered HTTP endpoint for event delivery
+export const webhooks = sqliteTable('webhooks', {
+  id: text('id').primaryKey(),
+  url: text('url').notNull(),
+  events: text('events').notNull().default('[]'), // JSON array of event type patterns
+  secret: text('secret').notNull(),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
