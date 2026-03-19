@@ -117,6 +117,9 @@ export {
   upsertAlertState,
 } from './crud.js';
 
+export { PluginRegistry } from './plugin.js';
+export type { TaskHandler } from './plugin.js';
+
 export type { AuditLogFilter } from './crud-audit-log.js';
 export type {
   AlertMetric,
