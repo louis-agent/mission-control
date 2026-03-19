@@ -195,3 +195,124 @@ describe('GET /workflows/:id/validate', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Approval gate API endpoints
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe('Approval gate endpoints', () => {
+  const approvalWorkflow = () =>
+    createWorkflow(db, {
+      id: 'wf-approval',
+      name: 'Approval Flow',
+      steps: [
+        { id: 's1', name: 'Build', type: 'build', config: {} },
+        { id: 's2', name: 'Gate', type: 'approval', config: {}, dependsOn: ['s1'] },
+        { id: 's3', name: 'Deploy', type: 'deploy', config: {}, dependsOn: ['s2'] },
+      ],
+      status: 'pending',
+    });
+
+  async function reachApprovalGate() {
+    approvalWorkflow();
+    const { body: run } = await request(app).post('/workflows/wf-approval/execute').send();
+    const tasks = listTasksByExecutionRun(db, run.id);
+    const s1 = tasks.find((t) => t.stepId === 's1')!;
+    updateTask(db, s1.id, { status: 'completed', output: {} });
+    await request(app).post(`/execution-runs/${run.id}/advance`).send();
+    return run;
+  }
+
+  it('POST /execution-runs/:id/steps/:stepId/approve resumes execution', async () => {
+    const run = await reachApprovalGate();
+
+    const approveRes = await request(app)
+      .post(`/execution-runs/${run.id}/steps/s2/approve`)
+      .send();
+    expect(approveRes.status).toBe(200);
+
+    // Advance again — s3 should now be scheduled
+    await request(app).post(`/execution-runs/${run.id}/advance`).send();
+    const tasks = listTasksByExecutionRun(db, run.id);
+    const s3 = tasks.find((t) => t.stepId === 's3');
+    expect(s3).toBeDefined();
+  });
+
+  it('POST /execution-runs/:id/steps/:stepId/reject fails the run', async () => {
+    const run = await reachApprovalGate();
+
+    const rejectRes = await request(app)
+      .post(`/execution-runs/${run.id}/steps/s2/reject`)
+      .send({ reason: 'Not ready' });
+    expect(rejectRes.status).toBe(200);
+
+    const advanceRes = await request(app).post(`/execution-runs/${run.id}/advance`).send();
+    expect(advanceRes.body.status).toBe('failed');
+  });
+
+  it('returns 404 for unknown run in approve', async () => {
+    const res = await request(app).post('/execution-runs/nope/steps/s1/approve').send();
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 409 when step is not awaiting approval', async () => {
+    simpleWorkflow();
+    const { body: run } = await request(app).post('/workflows/wf-1/execute').send();
+    const res = await request(app).post(`/execution-runs/${run.id}/steps/s1/approve`).send();
+    expect(res.status).toBe(409);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Timeout enforcement
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe('POST /execution-runs/check-timeouts', () => {
+  it('fails timed-out tasks and advances affected runs', async () => {
+    // Create a workflow with a per-step timeout
+    createWorkflow(db, {
+      id: 'wf-timeout',
+      name: 'Timeout Flow',
+      steps: [
+        { id: 's1', name: 'Slow', type: 'build', config: {}, timeoutMs: 1 }, // 1ms timeout
+      ],
+      status: 'pending',
+    });
+
+    const { body: run } = await request(app).post('/workflows/wf-timeout/execute').send();
+
+    // Wait briefly so timeout fires
+    await new Promise((r) => setTimeout(r, 5));
+
+    const res = await request(app).post('/execution-runs/check-timeouts').send();
+    expect(res.status).toBe(200);
+    expect(res.body.timedOutTasks).toBeGreaterThanOrEqual(1);
+
+    // Run should be failed after advance
+    await request(app).post(`/execution-runs/${run.id}/advance`).send();
+    const runRes = await request(app).get(`/execution-runs/${run.id}`);
+    expect(runRes.body.status).toBe('failed');
+  });
+
+  it('cancels timed-out execution runs', async () => {
+    createWorkflow(db, {
+      id: 'wf-run-timeout',
+      name: 'Run Timeout Flow',
+      steps: [{ id: 's1', name: 'Step', type: 'build', config: {} }],
+      status: 'pending',
+    });
+
+    const { body: run } = await request(app)
+      .post('/workflows/wf-run-timeout/execute')
+      .send({ timeoutMs: 1 });
+
+    await new Promise((r) => setTimeout(r, 5));
+
+    const res = await request(app).post('/execution-runs/check-timeouts').send();
+    expect(res.status).toBe(200);
+    expect(res.body.timedOutRuns).toBeGreaterThanOrEqual(1);
+
+    const runRes = await request(app).get(`/execution-runs/${run.id}`);
+    expect(runRes.body.status).toBe('cancelled');
+  });
+});

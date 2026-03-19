@@ -12,6 +12,7 @@ function rowToTask(row: TaskRow): Task {
     title: row.title,
     description: row.description,
     status: row.status,
+    priority: row.priority ?? 'medium',
     requiredCapabilities: fromJson<string[]>(row.requiredCapabilities),
     assigneeAgentId: row.assigneeAgentId,
     workflowId: row.workflowId,
@@ -24,6 +25,7 @@ function rowToTask(row: TaskRow): Task {
     maxRetries: row.maxRetries ?? 0,
     retryCount: row.retryCount ?? 0,
     retryDelay: row.retryDelay ?? 1000,
+    timeoutAt: (row.timeoutAt as Date | null) ?? null,
     createdAt: row.createdAt as Date,
     updatedAt: row.updatedAt as Date,
   };
@@ -36,6 +38,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     title: input.title,
     description: input.description,
     status: input.status,
+    priority: input.priority ?? 'medium',
     requiredCapabilities: toJson(input.requiredCapabilities),
     assigneeAgentId: input.assigneeAgentId,
     workflowId: input.workflowId,
@@ -48,6 +51,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     maxRetries: input.maxRetries ?? 0,
     retryCount: input.retryCount ?? 0,
     retryDelay: input.retryDelay ?? 1000,
+    timeoutAt: input.timeoutAt ?? null,
     createdAt: now,
     updatedAt: now,
   }).run();
@@ -80,6 +84,8 @@ export function updateTask(db: DB, id: string, input: UpdateTaskInput): Task | n
   if (input.maxRetries !== undefined) updates.maxRetries = input.maxRetries;
   if (input.retryCount !== undefined) updates.retryCount = input.retryCount;
   if (input.retryDelay !== undefined) updates.retryDelay = input.retryDelay;
+  if (input.priority !== undefined) updates.priority = input.priority;
+  if (input.timeoutAt !== undefined) updates.timeoutAt = input.timeoutAt;
   db.update(tasks).set(updates).where(eq(tasks.id, id)).run();
   return getTaskById(db, id);
 }
@@ -89,12 +95,30 @@ export function deleteTask(db: DB, id: string): boolean {
   return result.changes > 0;
 }
 
+const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
 export function listPendingTasks(db: DB): Task[] {
   return db.select().from(tasks)
     .where(eq(tasks.status, 'pending'))
     .all()
     .map(rowToTask)
-    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    .sort((a, b) => {
+      const pa = PRIORITY_ORDER[a.priority] ?? 2;
+      const pb = PRIORITY_ORDER[b.priority] ?? 2;
+      if (pa !== pb) return pa - pb;
+      return a.createdAt.getTime() - b.createdAt.getTime();
+    });
+}
+
+/** List tasks that have timed out (timeoutAt in the past) and are still in-flight. */
+export function listTimedOutTasks(db: DB): Task[] {
+  const now = new Date();
+  return db.select().from(tasks).all().map(rowToTask).filter(
+    (t) =>
+      t.timeoutAt !== null &&
+      t.timeoutAt <= now &&
+      ['pending', 'assigned', 'running', 'awaiting_approval'].includes(t.status),
+  );
 }
 
 export function listTasksByStatus(db: DB, status: Task['status']): Task[] {

@@ -7,6 +7,11 @@ import {
   startExecution,
   advanceExecution,
   cancelExecution,
+  approveStep,
+  rejectStep,
+  listTimedOutTasks,
+  listTimedOutRuns,
+  updateTask,
   InvalidTransitionError,
   type DB,
 } from '@mission-control/core';
@@ -24,7 +29,8 @@ export function createWorkflowRunnerApp(db: DB): Application {
     }
 
     try {
-      const run = startExecution(db, req.params.id);
+      const { timeoutMs } = req.body ?? {};
+      const run = startExecution(db, req.params.id, { timeoutMs });
       res.status(201).json(run);
     } catch (err) {
       res.status(422).json({ error: (err as Error).message });
@@ -71,6 +77,76 @@ export function createWorkflowRunnerApp(db: DB): Application {
       }
       throw err;
     }
+  });
+
+  // POST /execution-runs/:id/steps/:stepId/approve — approve an approval gate
+  app.post(
+    '/execution-runs/:id/steps/:stepId/approve',
+    (req: Request<{ id: string; stepId: string }>, res: Response) => {
+      const run = getExecutionRunById(db, req.params.id);
+      if (!run) {
+        res.status(404).json({ error: 'ExecutionRun not found' });
+        return;
+      }
+
+      try {
+        approveStep(db, req.params.id, req.params.stepId);
+        res.json({ approved: true, stepId: req.params.stepId });
+      } catch (err) {
+        res.status(409).json({ error: (err as Error).message });
+      }
+    },
+  );
+
+  // POST /execution-runs/:id/steps/:stepId/reject — reject an approval gate
+  app.post(
+    '/execution-runs/:id/steps/:stepId/reject',
+    (req: Request<{ id: string; stepId: string }>, res: Response) => {
+      const run = getExecutionRunById(db, req.params.id);
+      if (!run) {
+        res.status(404).json({ error: 'ExecutionRun not found' });
+        return;
+      }
+
+      try {
+        const { reason } = req.body ?? {};
+        rejectStep(db, req.params.id, req.params.stepId, reason);
+        res.json({ rejected: true, stepId: req.params.stepId });
+      } catch (err) {
+        res.status(409).json({ error: (err as Error).message });
+      }
+    },
+  );
+
+  // POST /execution-runs/check-timeouts — fail timed-out tasks, cancel timed-out runs
+  app.post('/execution-runs/check-timeouts', (_req: Request, res: Response) => {
+    const timedOutTasks = listTimedOutTasks(db);
+    for (const task of timedOutTasks) {
+      updateTask(db, task.id, { status: 'failed', errorMessage: 'Step timed out' });
+    }
+
+    const timedOutRuns = listTimedOutRuns(db);
+    for (const run of timedOutRuns) {
+      try {
+        cancelExecution(db, run.id);
+      } catch {
+        // already in terminal state
+      }
+    }
+
+    // Advance affected execution runs so step failures are recorded
+    const affectedRunIds = new Set<string>();
+    for (const task of timedOutTasks) {
+      if (task.executionRunId) affectedRunIds.add(task.executionRunId);
+    }
+    for (const runId of affectedRunIds) {
+      advanceExecution(db, runId);
+    }
+
+    res.json({
+      timedOutTasks: timedOutTasks.length,
+      timedOutRuns: timedOutRuns.length,
+    });
   });
 
   // GET /workflows/:id/validate — dry-run validation

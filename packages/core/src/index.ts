@@ -96,6 +96,8 @@ export {
   startExecution,
   advanceExecution,
   cancelExecution,
+  approveStep,
+  rejectStep,
   InvalidTransitionError,
   // Webhooks
   createWebhook,

@@ -12,6 +12,7 @@ import {
   requeueTaskForRetry,
   listAgents,
   type DB,
+  type Task,
 } from '@mission-control/core';
 import { CreateTaskSchema, CompleteTaskSchema, FailTaskSchema } from './validation.js';
 
@@ -23,26 +24,58 @@ function replyZodError(res: Response, err: ZodError): void {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Quota config
+// ──────────────────────────────────────────────────────────────────────────────
+
+export interface QueueQuotas {
+  /** Max concurrent tasks (assigned + running) per agent. Default: unlimited. */
+  maxTasksPerAgent?: number;
+  /** Max total concurrent tasks (assigned + running) across all agents. Default: unlimited. */
+  globalConcurrencyLimit?: number;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Dispatch logic
 // ──────────────────────────────────────────────────────────────────────────────
 
+const ACTIVE_STATUSES: Task['status'][] = ['assigned', 'running'];
+
 /**
- * Find the oldest pending task whose requiredCapabilities are all covered by
- * at least one idle agent, then assign it to that agent.
+ * Find the highest-priority pending task whose requiredCapabilities are all
+ * covered by at least one idle agent, respecting resource quotas.
  *
  * Returns the updated task or null if nothing could be dispatched.
  */
-function dispatchNextTask(db: DB) {
-  const pending = listPendingTasks(db); // FIFO order
+function dispatchNextTask(db: DB, quotas: QueueQuotas = {}) {
+  const pending = listPendingTasks(db); // sorted by priority then FIFO
+  const allTasks = listTasks(db);
   const idleAgents = listAgents(db).filter((a) => a.status === 'idle');
 
+  // Count active tasks per agent
+  const activePerAgent = new Map<string, number>();
+  for (const t of allTasks) {
+    if (t.assigneeAgentId && ACTIVE_STATUSES.includes(t.status)) {
+      activePerAgent.set(t.assigneeAgentId, (activePerAgent.get(t.assigneeAgentId) ?? 0) + 1);
+    }
+  }
+
+  // Count global active tasks
+  const globalActive = allTasks.filter((t) => ACTIVE_STATUSES.includes(t.status)).length;
+  if (quotas.globalConcurrencyLimit !== undefined && globalActive >= quotas.globalConcurrencyLimit) {
+    return null;
+  }
+
   for (const task of pending) {
-    const agent = idleAgents.find((a) =>
-      task.requiredCapabilities.every((cap) => a.capabilities.includes(cap))
-    );
+    const agent = idleAgents.find((a) => {
+      if (!task.requiredCapabilities.every((cap) => a.capabilities.includes(cap))) return false;
+      if (quotas.maxTasksPerAgent !== undefined) {
+        const agentActive = activePerAgent.get(a.id) ?? 0;
+        if (agentActive >= quotas.maxTasksPerAgent) return false;
+      }
+      return true;
+    });
     if (!agent) continue;
 
-    // Assign: pending → assigned, mark agent busy
     const assigned = updateTask(db, task.id, {
       status: 'assigned',
       assigneeAgentId: agent.id,
@@ -63,12 +96,12 @@ function dispatchNextTask(db: DB) {
 
 const VALID_STATUSES = ['pending', 'assigned', 'running', 'completed', 'failed', 'dead_letter'] as const;
 
-export function createQueueApp(db: DB): Application {
+export function createQueueApp(db: DB, quotas: QueueQuotas = {}): Application {
   const app = express();
   app.use(express.json());
 
   // POST /tasks — submit a new task
-  app.post('/tasks', (req: Request, res: Response, next: NextFunction) => {
+  app.post('/tasks', (req: Request, res: Response) => {
     const parsed = CreateTaskSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       replyZodError(res, parsed.error);
@@ -79,6 +112,7 @@ export function createQueueApp(db: DB): Application {
       id,
       title,
       description,
+      priority,
       requiredCapabilities,
       workflowId,
       dependencies,
@@ -92,6 +126,7 @@ export function createQueueApp(db: DB): Application {
       title,
       description: description ?? '',
       status: 'pending',
+      priority: priority ?? 'medium',
       requiredCapabilities: requiredCapabilities ?? [],
       assigneeAgentId: null,
       workflowId: workflowId ?? null,
@@ -148,10 +183,10 @@ export function createQueueApp(db: DB): Application {
     }
   });
 
-  // POST /tasks/dispatch — assign the oldest eligible pending task to an idle agent
+  // POST /tasks/dispatch — assign the highest-priority eligible pending task to an idle agent
   app.post('/tasks/dispatch', (_req: Request, res: Response, next: NextFunction) => {
     try {
-      const task = dispatchNextTask(db);
+      const task = dispatchNextTask(db, quotas);
       if (!task) {
         res.status(200).json({ dispatched: false, task: null });
         return;

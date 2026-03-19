@@ -124,13 +124,14 @@ export type CreateAuditLogInput = Omit<AuditLogEntry, 'id'> & { id?: string };
 export type CreateAgentInput = Omit<Agent, 'createdAt' | 'updatedAt' | 'lastHeartbeatAt'>;
 export type UpdateAgentInput = Partial<Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>>;
 
-export type CreateTaskInput = Omit<Task, 'createdAt' | 'updatedAt' | 'executionRunId' | 'stepId' | 'maxRetries' | 'retryCount' | 'retryDelay' | 'timeoutAt'> & {
+export type CreateTaskInput = Omit<Task, 'createdAt' | 'updatedAt' | 'executionRunId' | 'stepId' | 'maxRetries' | 'retryCount' | 'retryDelay' | 'timeoutAt' | 'priority'> & {
   executionRunId?: string | null;
   stepId?: string | null;
   maxRetries?: number;
   retryCount?: number;
   retryDelay?: number;
   timeoutAt?: Date | null;
+  priority?: TaskPriority;
 };
 export type UpdateTaskInput = Partial<Omit<Task, 'id' | 'createdAt' | 'updatedAt'>>;
 

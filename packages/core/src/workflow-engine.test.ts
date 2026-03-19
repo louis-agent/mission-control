@@ -9,8 +9,11 @@ import {
   startExecution,
   advanceExecution,
   cancelExecution,
+  approveStep,
+  rejectStep,
   InvalidTransitionError,
 } from './workflow-engine.js';
+import { createWorkflow as createWorkflowDirect } from './crud-workflows.js';
 
 let db: DB;
 
@@ -444,5 +447,229 @@ describe('Cancellation', () => {
     cancelExecution(db, run.id);
     const result = advanceExecution(db, run.id);
     expect(result?.status).toBe('cancelled');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Conditional branching
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe('Conditional branching', () => {
+  it('skips a step whose condition evaluates to false', () => {
+    buildTestWorkflow([
+      { id: 's1', name: 'Build', type: 'build', config: {} },
+      { id: 's2', name: 'Deploy', type: 'deploy', config: {}, dependsOn: ['s1'], condition: 'env == prod' },
+    ]);
+
+    const run = startExecution(db, 'wf-1');
+    const tasks = listTasksByExecutionRun(db, run.id);
+    // s1 completes with env=staging — condition fails
+    updateTask(db, tasks[0].id, { status: 'completed', output: { env: 'staging' } });
+    const result = advanceExecution(db, run.id);
+
+    // s2 was skipped → run completes
+    expect(result?.status).toBe('completed');
+    const s2Result = result?.stepResults.find((r) => r.stepId === 's2');
+    expect(s2Result?.status).toBe('skipped');
+  });
+
+  it('executes a step whose condition evaluates to true', () => {
+    buildTestWorkflow([
+      { id: 's1', name: 'Build', type: 'build', config: {} },
+      { id: 's2', name: 'Deploy', type: 'deploy', config: {}, dependsOn: ['s1'], condition: 'env == prod' },
+    ]);
+
+    const run = startExecution(db, 'wf-1');
+    let tasks = listTasksByExecutionRun(db, run.id);
+    updateTask(db, tasks[0].id, { status: 'completed', output: { env: 'prod' } });
+    advanceExecution(db, run.id);
+
+    tasks = listTasksByExecutionRun(db, run.id);
+    expect(tasks).toHaveLength(2);
+    const s2Task = tasks.find((t) => t.stepId === 's2')!;
+    expect(s2Task.status).toBe('pending'); // not skipped
+  });
+
+  it('treats dependents of a skipped step as satisfied', () => {
+    buildTestWorkflow([
+      { id: 's1', name: 'Compile', type: 'compile', config: {} },
+      { id: 's2', name: 'Sign', type: 'sign', config: {}, dependsOn: ['s1'], condition: 'sign == true' },
+      { id: 's3', name: 'Upload', type: 'upload', config: {}, dependsOn: ['s2'] },
+    ]);
+
+    const run = startExecution(db, 'wf-1');
+    let tasks = listTasksByExecutionRun(db, run.id);
+    // s1 completes without sign=true → s2 skipped → s3 should still run
+    updateTask(db, tasks[0].id, { status: 'completed', output: { sign: 'false' } });
+    advanceExecution(db, run.id);
+
+    tasks = listTasksByExecutionRun(db, run.id);
+    const s3Task = tasks.find((t) => t.stepId === 's3');
+    expect(s3Task).toBeDefined();
+    expect(s3Task!.status).toBe('pending');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Approval gates
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe('Approval gates', () => {
+  it('pauses execution when an approval step is reached', () => {
+    buildTestWorkflow([
+      { id: 's1', name: 'Build', type: 'build', config: {} },
+      { id: 's2', name: 'Approve', type: 'approval', config: {}, dependsOn: ['s1'] },
+      { id: 's3', name: 'Deploy', type: 'deploy', config: {}, dependsOn: ['s2'] },
+    ]);
+
+    const run = startExecution(db, 'wf-1');
+    let tasks = listTasksByExecutionRun(db, run.id);
+    updateTask(db, tasks[0].id, { status: 'completed', output: {} });
+    const advanced = advanceExecution(db, run.id);
+
+    // Run is still running but paused at approval
+    expect(advanced?.status).toBe('running');
+    tasks = listTasksByExecutionRun(db, run.id);
+    const approvalTask = tasks.find((t) => t.stepId === 's2')!;
+    expect(approvalTask.status).toBe('awaiting_approval');
+
+    // s3 should not be scheduled yet
+    const s3Task = tasks.find((t) => t.stepId === 's3');
+    expect(s3Task).toBeUndefined();
+  });
+
+  it('resumes execution when approval is granted', () => {
+    buildTestWorkflow([
+      { id: 's1', name: 'Build', type: 'build', config: {} },
+      { id: 's2', name: 'Approve', type: 'approval', config: {}, dependsOn: ['s1'] },
+      { id: 's3', name: 'Deploy', type: 'deploy', config: {}, dependsOn: ['s2'] },
+    ]);
+
+    const run = startExecution(db, 'wf-1');
+    let tasks = listTasksByExecutionRun(db, run.id);
+    updateTask(db, tasks[0].id, { status: 'completed', output: {} });
+    advanceExecution(db, run.id);
+
+    tasks = listTasksByExecutionRun(db, run.id);
+    approveStep(db, run.id, 's2');
+    advanceExecution(db, run.id);
+
+    tasks = listTasksByExecutionRun(db, run.id);
+    const s3Task = tasks.find((t) => t.stepId === 's3');
+    expect(s3Task).toBeDefined();
+    expect(s3Task!.status).toBe('pending');
+  });
+
+  it('fails the run when an approval step is rejected', () => {
+    buildTestWorkflow([
+      { id: 's1', name: 'Build', type: 'build', config: {} },
+      { id: 's2', name: 'Approve', type: 'approval', config: {}, dependsOn: ['s1'] },
+    ]);
+
+    const run = startExecution(db, 'wf-1');
+    const tasks = listTasksByExecutionRun(db, run.id);
+    updateTask(db, tasks[0].id, { status: 'completed', output: {} });
+    advanceExecution(db, run.id);
+
+    rejectStep(db, run.id, 's2', 'Not approved');
+    const result = advanceExecution(db, run.id);
+
+    expect(result?.status).toBe('failed');
+    const s2Result = result?.stepResults.find((r) => r.stepId === 's2');
+    expect(s2Result?.status).toBe('failure');
+  });
+
+  it('throws when approving a step not awaiting approval', () => {
+    buildTestWorkflow([{ id: 's1', name: 'Build', type: 'build', config: {} }]);
+    const run = startExecution(db, 'wf-1');
+    expect(() => approveStep(db, run.id, 's1')).toThrow();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Sub-workflows
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe('Sub-workflows', () => {
+  it('creates a child execution run for a subworkflow step', () => {
+    // Create the sub-workflow separately
+    createWorkflowDirect(db, {
+      id: 'sub-wf',
+      name: 'Sub Workflow',
+      steps: [{ id: 'sub-s1', name: 'SubStep', type: 'build', config: {} }],
+      status: 'pending',
+    });
+
+    buildTestWorkflow([
+      { id: 's1', name: 'Prepare', type: 'build', config: {} },
+      {
+        id: 's2',
+        name: 'Run Sub',
+        type: 'subworkflow',
+        config: {},
+        dependsOn: ['s1'],
+        subworkflowId: 'sub-wf',
+      },
+      { id: 's3', name: 'Finish', type: 'deploy', config: {}, dependsOn: ['s2'] },
+    ]);
+
+    const run = startExecution(db, 'wf-1');
+    let tasks = listTasksByExecutionRun(db, run.id);
+    updateTask(db, tasks[0].id, { status: 'completed', output: { data: 42 } });
+    const advanced = advanceExecution(db, run.id);
+
+    // Child run should have been started
+    expect(advanced?.status).toBe('running');
+    tasks = listTasksByExecutionRun(db, run.id);
+    const s2Task = tasks.find((t) => t.stepId === 's2')!;
+    // The subworkflow step task is marked as running (waiting for child)
+    expect(s2Task.status).toBe('running');
+    expect(s2Task.output.childRunId).toBeDefined();
+
+    // s3 should not be scheduled yet
+    const s3Task = tasks.find((t) => t.stepId === 's3');
+    expect(s3Task).toBeUndefined();
+  });
+
+  it('completes the parent step when the child run completes', () => {
+    createWorkflowDirect(db, {
+      id: 'sub-wf',
+      name: 'Sub Workflow',
+      steps: [{ id: 'sub-s1', name: 'SubStep', type: 'build', config: {} }],
+      status: 'pending',
+    });
+
+    buildTestWorkflow([
+      { id: 's1', name: 'Prepare', type: 'build', config: {} },
+      {
+        id: 's2',
+        name: 'Run Sub',
+        type: 'subworkflow',
+        config: {},
+        dependsOn: ['s1'],
+        subworkflowId: 'sub-wf',
+      },
+      { id: 's3', name: 'Finish', type: 'deploy', config: {}, dependsOn: ['s2'] },
+    ]);
+
+    const run = startExecution(db, 'wf-1');
+    let tasks = listTasksByExecutionRun(db, run.id);
+    updateTask(db, tasks[0].id, { status: 'completed', output: {} });
+    advanceExecution(db, run.id);
+
+    tasks = listTasksByExecutionRun(db, run.id);
+    const s2Task = tasks.find((t) => t.stepId === 's2')!;
+    const childRunId = s2Task.output.childRunId as string;
+
+    // Complete the child run's task
+    const subTasks = listTasksByExecutionRun(db, childRunId);
+    updateTask(db, subTasks[0].id, { status: 'completed', output: { result: 'done' } });
+    advanceExecution(db, childRunId); // completes child run
+
+    // Advance parent — s2 should be completed now
+    advanceExecution(db, run.id);
+    tasks = listTasksByExecutionRun(db, run.id);
+    const s3Task = tasks.find((t) => t.stepId === 's3');
+    expect(s3Task).toBeDefined();
   });
 });

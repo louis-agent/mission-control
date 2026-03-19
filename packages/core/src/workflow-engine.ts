@@ -5,6 +5,7 @@ import { getWorkflowById } from './crud-workflows.js';
 import { createExecutionRun, getExecutionRunById, updateExecutionRun } from './crud-execution-runs.js';
 import { createTask, updateTask, listTasksByExecutionRun } from './crud-tasks.js';
 import { listAgents } from './crud-agents.js';
+import { evaluateCondition } from './condition-evaluator.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // State machine
@@ -64,12 +65,10 @@ export function validateWorkflow(workflow: Workflow, agents: Agent[]): Validatio
   const errors: string[] = [];
   const stepIds = new Set(workflow.steps.map((s) => s.id));
 
-  // Check for cycles
   if (detectCycle(workflow.steps)) {
     errors.push('Workflow has cyclic step dependencies');
   }
 
-  // Check dependsOn references are valid
   for (const step of workflow.steps) {
     for (const dep of step.dependsOn ?? []) {
       if (!stepIds.has(dep)) {
@@ -78,7 +77,6 @@ export function validateWorkflow(workflow: Workflow, agents: Agent[]): Validatio
     }
   }
 
-  // Check required capabilities are available
   const allCapabilities = new Set(agents.flatMap((a) => a.capabilities));
   for (const step of workflow.steps) {
     for (const cap of step.requiredCapabilities ?? []) {
@@ -95,18 +93,6 @@ export function validateWorkflow(workflow: Workflow, agents: Agent[]): Validatio
 // Execution helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
-function getReadySteps(
-  steps: WorkflowStep[],
-  completedStepIds: Set<string>,
-  scheduledStepIds: Set<string>,
-): WorkflowStep[] {
-  return steps.filter((step) => {
-    if (scheduledStepIds.has(step.id)) return false;
-    const deps = step.dependsOn ?? [];
-    return deps.every((dep) => completedStepIds.has(dep));
-  });
-}
-
 function mergeOutputsFromDeps(
   steps: WorkflowStep[],
   stepId: string,
@@ -122,15 +108,52 @@ function mergeOutputsFromDeps(
   return merged;
 }
 
+/**
+ * Determine which steps are ready to be scheduled.
+ * A step is ready if:
+ *  - it hasn't already been scheduled
+ *  - all its dependencies are satisfied (completed OR skipped)
+ *  - its condition (if any) passes against the merged dep outputs
+ */
+function getReadyOrSkippableSteps(
+  steps: WorkflowStep[],
+  completedOrSkippedIds: Set<string>,
+  scheduledStepIds: Set<string>,
+  stepOutputs: Map<string, Record<string, unknown>>,
+): { ready: WorkflowStep[]; skipped: WorkflowStep[] } {
+  const ready: WorkflowStep[] = [];
+  const skipped: WorkflowStep[] = [];
+
+  for (const step of steps) {
+    if (scheduledStepIds.has(step.id) || completedOrSkippedIds.has(step.id)) continue;
+    const deps = step.dependsOn ?? [];
+    if (!deps.every((dep) => completedOrSkippedIds.has(dep))) continue;
+
+    if (step.condition) {
+      const ctx = mergeOutputsFromDeps(steps, step.id, stepOutputs) as Record<string, unknown>;
+      if (!evaluateCondition(step.condition, ctx)) {
+        skipped.push(step);
+        continue;
+      }
+    }
+    ready.push(step);
+  }
+
+  return { ready, skipped };
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Public API
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
  * Start a new execution run for the given workflow.
- * Creates tasks for all steps with no dependencies (root steps).
  */
-export function startExecution(db: DB, workflowId: string): ExecutionRun {
+export function startExecution(
+  db: DB,
+  workflowId: string,
+  opts?: { parentRunId?: string; parentStepId?: string; timeoutMs?: number },
+): ExecutionRun {
   const workflow = getWorkflowById(db, workflowId);
   if (!workflow) throw new Error(`Workflow '${workflowId}' not found`);
 
@@ -140,41 +163,60 @@ export function startExecution(db: DB, workflowId: string): ExecutionRun {
     throw new Error(`Workflow validation failed: ${validation.errors.join('; ')}`);
   }
 
+  const timeoutAt = opts?.timeoutMs ? new Date(Date.now() + opts.timeoutMs) : null;
+
   const run = createExecutionRun(db, {
     id: randomUUID(),
     workflowId,
+    parentRunId: opts?.parentRunId ?? null,
+    parentStepId: opts?.parentStepId ?? null,
     status: 'running',
     startedAt: new Date(),
     completedAt: null,
-    cancelledAt: null,
+    timeoutAt,
     stepResults: [],
   });
 
-  const rootSteps = getReadySteps(workflow.steps, new Set(), new Set());
+  const rootSteps = workflow.steps.filter((s) => (s.dependsOn ?? []).length === 0);
   for (const step of rootSteps) {
-    createTask(db, {
-      id: randomUUID(),
-      title: step.name,
-      description: `Execute step '${step.name}' (type: ${step.type})`,
-      status: 'pending',
-      requiredCapabilities: step.requiredCapabilities ?? [],
-      assigneeAgentId: null,
-      workflowId,
-      executionRunId: run.id,
-      stepId: step.id,
-      dependencies: [],
-      input: {},
-      output: {},
-      errorMessage: null,
-    });
+    scheduleStep(db, step, run.id, workflowId, {});
   }
 
   return getExecutionRunById(db, run.id)!;
 }
 
+function scheduleStep(
+  db: DB,
+  step: WorkflowStep,
+  runId: string,
+  workflowId: string,
+  input: Record<string, unknown>,
+): void {
+  const timeoutAt = step.timeoutMs ? new Date(Date.now() + step.timeoutMs) : undefined;
+  const status = step.type === 'approval' ? 'awaiting_approval' : 'pending';
+
+  createTask(db, {
+    id: randomUUID(),
+    title: step.name,
+    description: `Execute step '${step.name}' (type: ${step.type})`,
+    status,
+    priority: 'medium',
+    requiredCapabilities: step.requiredCapabilities ?? [],
+    assigneeAgentId: null,
+    workflowId,
+    executionRunId: runId,
+    stepId: step.id,
+    dependencies: [],
+    input,
+    output: {},
+    errorMessage: null,
+    timeoutAt,
+  });
+}
+
 /**
- * Advance the execution run: check completed tasks, schedule newly unblocked steps.
- * Returns updated run, or null if run not found.
+ * Advance the execution run: check completed tasks, handle approvals, sub-workflows,
+ * schedule newly unblocked steps. Returns updated run, or null if run not found.
  */
 export function advanceExecution(db: DB, runId: string): ExecutionRun | null {
   const run = getExecutionRunById(db, runId);
@@ -186,37 +228,62 @@ export function advanceExecution(db: DB, runId: string): ExecutionRun | null {
 
   const allTasks = listTasksByExecutionRun(db, runId);
 
-  // Build step state maps
-  const completedStepIds = new Set<string>();
+  const completedOrSkippedIds = new Set<string>();
   const failedStepIds = new Set<string>();
   const scheduledStepIds = new Set<string>();
   const stepOutputs = new Map<string, Record<string, unknown>>();
 
-  // Collect results already recorded (from previous advances)
+  // Collect already-recorded results
   for (const sr of run.stepResults) {
-    if (sr.status === 'success') {
-      completedStepIds.add(sr.stepId);
-      stepOutputs.set(sr.stepId, sr.output);
+    if (sr.status === 'success' || sr.status === 'skipped') {
+      completedOrSkippedIds.add(sr.stepId);
+      if (sr.status === 'success') stepOutputs.set(sr.stepId, sr.output);
     } else if (sr.status === 'failure') {
       failedStepIds.add(sr.stepId);
     }
   }
 
-  // Determine scheduled steps (tasks exist)
   for (const task of allTasks) {
     if (task.stepId) scheduledStepIds.add(task.stepId);
   }
 
-  // Process task completions not yet in stepResults
   const newStepResults = [...run.stepResults];
   let newFailure = false;
 
+  // Process task completions / sub-workflow completions
   for (const task of allTasks) {
     if (!task.stepId) continue;
-    if (completedStepIds.has(task.stepId) || failedStepIds.has(task.stepId)) continue;
+    if (completedOrSkippedIds.has(task.stepId) || failedStepIds.has(task.stepId)) continue;
+
+    const step = workflow.steps.find((s) => s.id === task.stepId);
+
+    if (step?.type === 'subworkflow' && task.status === 'running') {
+      // Check if child run is done
+      const childRunId = task.output.childRunId as string | undefined;
+      if (childRunId) {
+        const childRun = getExecutionRunById(db, childRunId);
+        if (childRun?.status === 'completed') {
+          updateTask(db, task.id, { status: 'completed', output: task.output });
+          completedOrSkippedIds.add(task.stepId);
+          stepOutputs.set(task.stepId, task.output);
+          newStepResults.push({ stepId: task.stepId, status: 'success', output: task.output });
+        } else if (childRun?.status === 'failed' || childRun?.status === 'cancelled') {
+          updateTask(db, task.id, { status: 'failed', errorMessage: 'Sub-workflow failed' });
+          failedStepIds.add(task.stepId);
+          newStepResults.push({
+            stepId: task.stepId,
+            status: 'failure',
+            output: {},
+            error: 'Sub-workflow failed',
+          });
+          newFailure = true;
+        }
+      }
+      continue;
+    }
 
     if (task.status === 'completed') {
-      completedStepIds.add(task.stepId);
+      completedOrSkippedIds.add(task.stepId);
       stepOutputs.set(task.stepId, task.output);
       newStepResults.push({ stepId: task.stepId, status: 'success', output: task.output });
     } else if (task.status === 'failed') {
@@ -231,47 +298,73 @@ export function advanceExecution(db: DB, runId: string): ExecutionRun | null {
     }
   }
 
-  // If any step failed, cancel remaining tasks and mark run as failed
   if (newFailure || failedStepIds.size > 0) {
     for (const task of allTasks) {
-      if (['pending', 'assigned', 'running'].includes(task.status)) {
+      if (['pending', 'assigned', 'running', 'awaiting_approval'].includes(task.status)) {
         updateTask(db, task.id, { status: 'cancelled', errorMessage: 'Execution run failed' });
       }
     }
     assertTransition(run.status, 'failed');
-    return updateExecutionRun(db, runId, {
-      status: 'failed',
-      stepResults: newStepResults,
-    });
+    return updateExecutionRun(db, runId, { status: 'failed', stepResults: newStepResults });
   }
 
-  // Schedule newly unblocked steps
-  const newlyReady = getReadySteps(workflow.steps, completedStepIds, scheduledStepIds);
-  for (const step of newlyReady) {
-    const input = mergeOutputsFromDeps(workflow.steps, step.id, stepOutputs);
-    createTask(db, {
-      id: randomUUID(),
-      title: step.name,
-      description: `Execute step '${step.name}' (type: ${step.type})`,
-      status: 'pending',
-      requiredCapabilities: step.requiredCapabilities ?? [],
-      assigneeAgentId: null,
-      workflowId: run.workflowId,
-      executionRunId: runId,
-      stepId: step.id,
-      dependencies: [],
-      input,
-      output: {},
-      errorMessage: null,
-    });
-    scheduledStepIds.add(step.id);
+  // Iteratively propagate skips and schedule ready steps until stable
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const { ready, skipped } = getReadyOrSkippableSteps(
+      workflow.steps,
+      completedOrSkippedIds,
+      scheduledStepIds,
+      stepOutputs,
+    );
+
+    for (const step of skipped) {
+      newStepResults.push({ stepId: step.id, status: 'skipped', output: {} });
+      completedOrSkippedIds.add(step.id);
+      scheduledStepIds.add(step.id);
+      changed = true;
+    }
+
+    for (const step of ready) {
+      const input = mergeOutputsFromDeps(workflow.steps, step.id, stepOutputs);
+      if (step.type === 'subworkflow') {
+        if (!step.subworkflowId) continue;
+        const childRun = startExecution(db, step.subworkflowId, {
+          parentRunId: runId,
+          parentStepId: step.id,
+        });
+        createTask(db, {
+          id: randomUUID(),
+          title: step.name,
+          description: `Sub-workflow step '${step.name}'`,
+          status: 'running',
+          priority: 'medium',
+          requiredCapabilities: [],
+          assigneeAgentId: null,
+          workflowId: run.workflowId,
+          executionRunId: runId,
+          stepId: step.id,
+          dependencies: [],
+          input,
+          output: { childRunId: childRun.id },
+          errorMessage: null,
+        });
+      } else {
+        scheduleStep(db, step, runId, run.workflowId, input);
+      }
+      scheduledStepIds.add(step.id);
+      changed = true;
+    }
   }
 
-  // Check if all steps are done
+  // Check if all steps are done (completed, skipped, or awaiting_approval blocks)
   const allStepIds = new Set(workflow.steps.map((s) => s.id));
-  const allDone = [...allStepIds].every((id) => completedStepIds.has(id));
+  const awaitingApproval = allTasks.some((t) => t.status === 'awaiting_approval');
 
-  if (allDone) {
+  const allDone = [...allStepIds].every((id) => completedOrSkippedIds.has(id));
+
+  if (allDone && !awaitingApproval) {
     assertTransition(run.status, 'completed');
     return updateExecutionRun(db, runId, {
       status: 'completed',
@@ -280,12 +373,45 @@ export function advanceExecution(db: DB, runId: string): ExecutionRun | null {
     });
   }
 
-  // Update step results if changed
   if (newStepResults.length !== run.stepResults.length) {
     return updateExecutionRun(db, runId, { stepResults: newStepResults });
   }
 
   return getExecutionRunById(db, runId);
+}
+
+/**
+ * Approve a pending approval step, transitioning the task to completed.
+ */
+export function approveStep(db: DB, runId: string, stepId: string): void {
+  const run = getExecutionRunById(db, runId);
+  if (!run) throw new Error(`ExecutionRun '${runId}' not found`);
+
+  const allTasks = listTasksByExecutionRun(db, runId);
+  const task = allTasks.find((t) => t.stepId === stepId);
+  if (!task || task.status !== 'awaiting_approval') {
+    throw new Error(`Step '${stepId}' is not awaiting approval`);
+  }
+  updateTask(db, task.id, { status: 'completed', output: { approved: true } });
+}
+
+/**
+ * Reject a pending approval step, transitioning the task to failed.
+ */
+export function rejectStep(db: DB, runId: string, stepId: string, reason?: string): void {
+  const run = getExecutionRunById(db, runId);
+  if (!run) throw new Error(`ExecutionRun '${runId}' not found`);
+
+  const allTasks = listTasksByExecutionRun(db, runId);
+  const task = allTasks.find((t) => t.stepId === stepId);
+  if (!task || task.status !== 'awaiting_approval') {
+    throw new Error(`Step '${stepId}' is not awaiting approval`);
+  }
+  updateTask(db, task.id, {
+    status: 'failed',
+    errorMessage: reason ?? 'Rejected',
+    output: { approved: false },
+  });
 }
 
 /**
@@ -299,13 +425,10 @@ export function cancelExecution(db: DB, runId: string): ExecutionRun | null {
 
   const allTasks = listTasksByExecutionRun(db, runId);
   for (const task of allTasks) {
-    if (['pending', 'assigned', 'running'].includes(task.status)) {
+    if (['pending', 'assigned', 'running', 'awaiting_approval'].includes(task.status)) {
       updateTask(db, task.id, { status: 'cancelled', errorMessage: 'Execution run cancelled' });
     }
   }
 
-  return updateExecutionRun(db, runId, {
-    status: 'cancelled',
-    cancelledAt: new Date(),
-  });
+  return updateExecutionRun(db, runId, { status: 'cancelled', cancelledAt: new Date() });
 }

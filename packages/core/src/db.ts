@@ -39,6 +39,7 @@ export function runMigrations(sqlite: Database.Database) {
       title TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'pending',
+      priority TEXT NOT NULL DEFAULT 'medium',
       required_capabilities TEXT NOT NULL DEFAULT '[]',
       assignee_agent_id TEXT,
       workflow_id TEXT,
@@ -48,6 +49,10 @@ export function runMigrations(sqlite: Database.Database) {
       input TEXT NOT NULL DEFAULT '{}',
       output TEXT NOT NULL DEFAULT '{}',
       error_message TEXT,
+      max_retries INTEGER NOT NULL DEFAULT 0,
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      retry_delay INTEGER NOT NULL DEFAULT 1000,
+      timeout_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -55,10 +60,13 @@ export function runMigrations(sqlite: Database.Database) {
     CREATE TABLE IF NOT EXISTS execution_runs (
       id TEXT PRIMARY KEY,
       workflow_id TEXT NOT NULL,
+      parent_run_id TEXT,
+      parent_step_id TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
       started_at INTEGER,
       completed_at INTEGER,
       cancelled_at INTEGER,
+      timeout_at INTEGER,
       step_results TEXT NOT NULL DEFAULT '[]',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
