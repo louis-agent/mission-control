@@ -2,6 +2,7 @@
   "name": "@mission-control/api",
   "version": "0.1.0",
   "description": "HTTP API server for AI mission control",
+  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
