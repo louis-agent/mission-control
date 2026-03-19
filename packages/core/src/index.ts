@@ -120,6 +120,8 @@ export {
 export { PluginRegistry } from './plugin.js';
 export type { TaskHandler } from './plugin.js';
 
+export { shellExecutorHandler } from './plugins/shell-executor.js';
+
 export type { AuditLogFilter } from './crud-audit-log.js';
 export type {
   AlertMetric,
