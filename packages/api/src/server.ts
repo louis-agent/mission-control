@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { createDb } from '@mission-control/core';
+import { createDb, EventBus } from '@mission-control/core';
+import { createSseApp } from './sse.js';
 import { createRegistryApp } from './registry.js';
 import { createQueueApp } from './queue.js';
 import { createWorkflowRunnerApp } from './workflow-runner.js';
@@ -18,6 +19,7 @@ const DB_PATH = process.env.DB_PATH ?? './mission-control.db';
 const SHUTDOWN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_TIMEOUT_MS ?? '10000', 10);
 
 const db = createDb(DB_PATH);
+const eventBus = new EventBus(db);
 
 const app = express();
 app.use(express.json());
@@ -58,6 +60,7 @@ app.use(rateLimitMiddleware);
 app.use(createAuditLoggerMiddleware(db));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
+app.use(createSseApp(eventBus));
 app.use(createRegistryApp(db));
 app.use(createQueueApp(db));
 app.use(createWorkflowRunnerApp(db));
