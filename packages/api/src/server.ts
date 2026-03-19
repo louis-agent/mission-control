@@ -12,6 +12,7 @@ import { createOpenApiApp } from './openapi.js';
 import { createMetricsApp } from './metrics.js';
 import { createDashboardApp } from './dashboard.js';
 import { createAlertsApp } from './alerts.js';
+import { createPluginManagerApp } from './plugin-manager.js';
 import { initTracing, shutdownTracing } from './tracing.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { rateLimitMiddleware } from './middleware/rate-limiter.js';
@@ -79,6 +80,7 @@ app.use(createAuditLogApp(db));
 app.use(createWebhooksApp(db));
 app.use(createDashboardApp(db));
 app.use(createAlertsApp(db));
+app.use(createPluginManagerApp());
 app.use(createOpenApiApp());
 
 // ── Centralised error handler (must be last) ──────────────────────────────────
