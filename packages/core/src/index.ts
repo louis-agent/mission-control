@@ -6,6 +6,7 @@ export const VERSION = '0.1.0';
 export type {
   AgentStatus,
   TaskStatus,
+  TaskPriority,
   WorkflowStatus,
   ExecutionRunStatus,
   Agent,
@@ -30,6 +31,9 @@ export type {
   AuditActorType,
   CreateApiKeyInput,
   CreateAuditLogInput,
+  Webhook,
+  CreateWebhookInput,
+  UpdateWebhookInput,
 } from './types.js';
 
 // Schema
@@ -61,6 +65,7 @@ export {
   listTasksByStatus,
   listTasksByExecutionRun,
   listDeadLetterTasks,
+  listTimedOutTasks,
   requeueTaskForRetry,
   createWorkflow,
   getWorkflowById,
@@ -70,6 +75,7 @@ export {
   createExecutionRun,
   getExecutionRunById,
   listExecutionRuns,
+  listTimedOutRuns,
   updateExecutionRun,
   deleteExecutionRun,
   createEvent,
@@ -91,6 +97,13 @@ export {
   advanceExecution,
   cancelExecution,
   InvalidTransitionError,
+  // Webhooks
+  createWebhook,
+  getWebhookById,
+  listWebhooks,
+  updateWebhook,
+  deleteWebhook,
+  listActiveWebhooksForEvent,
 } from './crud.js';
 
 export type { AuditLogFilter } from './crud-audit-log.js';

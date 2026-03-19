@@ -23,6 +23,7 @@ export const CreateTaskSchema = z.object({
   id: z.string().min(1).optional(),
   title: z.string().min(1),
   description: z.string().optional(),
+  priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
   requiredCapabilities: z.array(z.string()).optional(),
   workflowId: z.string().optional(),
   dependencies: z.array(z.string()).optional(),
@@ -48,6 +49,10 @@ const WorkflowStepSchema = z.object({
   config: z.record(z.string(), z.unknown()).default({}),
   dependsOn: z.array(z.string()).optional(),
   requiredCapabilities: z.array(z.string()).optional(),
+  condition: z.string().optional(),
+  subworkflowId: z.string().optional(),
+  timeoutMs: z.number().int().positive().optional(),
+  approvalTimeoutHours: z.number().positive().optional(),
 });
 
 export const CreateWorkflowSchema = z.object({
@@ -56,6 +61,23 @@ export const CreateWorkflowSchema = z.object({
   steps: z.array(WorkflowStepSchema).optional(),
   status: z.enum(['pending', 'running', 'completed', 'failed']).optional(),
 });
+
+// ── Webhook schemas ───────────────────────────────────────────────────────────
+
+export const CreateWebhookSchema = z.object({
+  id: z.string().min(1).optional(),
+  url: z.string().url(),
+  events: z.array(z.string().min(1)).min(1),
+  secret: z.string().min(8),
+  active: z.boolean().optional(),
+});
+
+export const UpdateWebhookSchema = z.object({
+  url: z.string().url().optional(),
+  events: z.array(z.string().min(1)).optional(),
+  secret: z.string().min(8).optional(),
+  active: z.boolean().optional(),
+}).strict();
 
 export type CreateAgentInput = z.infer<typeof CreateAgentSchema>;
 export type UpdateAgentInput = z.infer<typeof UpdateAgentSchema>;

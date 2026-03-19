@@ -6,6 +6,7 @@ import { createQueueApp } from './queue.js';
 import { createWorkflowRunnerApp } from './workflow-runner.js';
 import { createApiKeysApp } from './api-keys.js';
 import { createAuditLogApp } from './audit-log.js';
+import { createWebhooksApp } from './webhooks.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { rateLimitMiddleware } from './middleware/rate-limiter.js';
 import { createAuditLoggerMiddleware } from './middleware/audit-logger.js';
@@ -62,6 +63,7 @@ app.use(createQueueApp(db));
 app.use(createWorkflowRunnerApp(db));
 app.use(createApiKeysApp(db));
 app.use(createAuditLogApp(db));
+app.use(createWebhooksApp(db));
 
 // ── Centralised error handler (must be last) ──────────────────────────────────
 app.use(errorHandler);
