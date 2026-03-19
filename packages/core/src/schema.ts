@@ -133,3 +133,20 @@ export const alertStates = sqliteTable('alert_states', {
   resolvedAt: integer('resolved_at', { mode: 'timestamp' }),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
+
+// BackgroundJob: async task queued for off-request-path processing
+export const jobs = sqliteTable('jobs', {
+  id: text('id').primaryKey(),
+  // type: workflow_execution | webhook_delivery | metric_aggregation
+  type: text('type', { enum: ['workflow_execution', 'webhook_delivery', 'metric_aggregation'] }).notNull(),
+  // status: pending | running | completed | failed
+  status: text('status', { enum: ['pending', 'running', 'completed', 'failed'] }).notNull().default('pending'),
+  payload: text('payload').notNull().default('{}'), // JSON object
+  attempts: integer('attempts').notNull().default(0),
+  maxAttempts: integer('max_attempts').notNull().default(3),
+  errorMessage: text('error_message'),
+  claimedAt: integer('claimed_at', { mode: 'timestamp' }),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});

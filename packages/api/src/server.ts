@@ -21,6 +21,9 @@ import { createPluginManagerApp } from './plugin-manager.js';
 import { createStorageApp } from './storage-api.js';
 import { createGitHubApp } from './github.js';
 import { createSlackApp } from './slack.js';
+import { createJobsApp } from './jobs.js';
+import { JobWorker } from './job-worker.js';
+import { workflowExecutionHandler, webhookDeliveryHandler, metricAggregationHandler } from './job-handlers.js';
 import { initTracing, shutdownTracing } from './tracing.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { rateLimitMiddleware } from './middleware/rate-limiter.js';
@@ -106,20 +109,29 @@ app.use(createDashboardApp(db));
 app.use(createAlertsApp(db));
 app.use(createPluginManagerApp());
 app.use(createStorageApp(storage));
+app.use(createJobsApp(db));
 app.use(createOpenApiApp());
 
 // ── Centralised error handler (must be last) ──────────────────────────────────
 app.use(errorHandler);
 
+// ── Background job worker ─────────────────────────────────────────────────────
+const worker = new JobWorker(db)
+  .register('workflow_execution', workflowExecutionHandler)
+  .register('webhook_delivery', webhookDeliveryHandler)
+  .register('metric_aggregation', metricAggregationHandler);
+
 // ── Server startup ────────────────────────────────────────────────────────────
 const server = app.listen(PORT, () => {
   logger.info({ port: PORT, db: DB_PATH }, 'Mission Control API started');
+  worker.start();
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 function shutdown(signal: string) {
   logger.info({ signal }, 'Shutdown signal received');
 
+  worker.stop();
   server.close(async (err) => {
     if (err) {
       logger.error({ err }, 'Error during server close');

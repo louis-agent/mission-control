@@ -38,7 +38,7 @@ const simpleWorkflow = () =>
 describe('POST /workflows/:id/execute', () => {
   it('starts execution and returns 201 with run', async () => {
     simpleWorkflow();
-    const res = await request(app).post('/workflows/wf-1/execute').send();
+    const res = await request(app).post("/workflows/wf-1/execute").send({ sync: true });
 
     expect(res.status).toBe(201);
     expect(res.body.workflowId).toBe('wf-1');
@@ -48,7 +48,7 @@ describe('POST /workflows/:id/execute', () => {
   });
 
   it('returns 404 for unknown workflow', async () => {
-    const res = await request(app).post('/workflows/unknown/execute').send();
+    const res = await request(app).post("/workflows/unknown/execute").send({ sync: true });
     expect(res.status).toBe(404);
   });
 
@@ -61,7 +61,7 @@ describe('POST /workflows/:id/execute', () => {
       ],
       status: 'pending',
     });
-    const res = await request(app).post('/workflows/wf-invalid/execute').send();
+    const res = await request(app).post("/workflows/wf-invalid/execute").send({ sync: true });
     expect(res.status).toBe(422);
     expect(res.body.error).toMatch(/validation failed/i);
   });
@@ -74,7 +74,7 @@ describe('POST /workflows/:id/execute', () => {
 describe('GET /execution-runs/:id', () => {
   it('returns the run with stepResults', async () => {
     simpleWorkflow();
-    const { body: run } = await request(app).post('/workflows/wf-1/execute').send();
+    const { body: run } = await request(app).post("/workflows/wf-1/execute").send({ sync: true });
 
     const res = await request(app).get(`/execution-runs/${run.id}`);
     expect(res.status).toBe(200);
@@ -95,7 +95,7 @@ describe('GET /execution-runs/:id', () => {
 describe('POST /execution-runs/:id/advance', () => {
   it('advances run to completed when all steps done', async () => {
     simpleWorkflow();
-    const { body: run } = await request(app).post('/workflows/wf-1/execute').send();
+    const { body: run } = await request(app).post("/workflows/wf-1/execute").send({ sync: true });
 
     // Complete s1
     const tasks = listTasksByExecutionRun(db, run.id);
@@ -130,7 +130,7 @@ describe('POST /execution-runs/:id/advance', () => {
 describe('POST /execution-runs/:id/cancel', () => {
   it('cancels a running execution', async () => {
     simpleWorkflow();
-    const { body: run } = await request(app).post('/workflows/wf-1/execute').send();
+    const { body: run } = await request(app).post("/workflows/wf-1/execute").send({ sync: true });
 
     const res = await request(app).post(`/execution-runs/${run.id}/cancel`).send();
     expect(res.status).toBe(200);
@@ -145,7 +145,7 @@ describe('POST /execution-runs/:id/cancel', () => {
 
   it('returns 409 when cancelling a completed run', async () => {
     simpleWorkflow();
-    const { body: run } = await request(app).post('/workflows/wf-1/execute').send();
+    const { body: run } = await request(app).post("/workflows/wf-1/execute").send({ sync: true });
 
     const tasks = listTasksByExecutionRun(db, run.id);
     updateTask(db, tasks[0].id, { status: 'completed', output: {} });
@@ -215,7 +215,7 @@ describe('Approval gate endpoints', () => {
 
   async function reachApprovalGate() {
     approvalWorkflow();
-    const { body: run } = await request(app).post('/workflows/wf-approval/execute').send();
+    const { body: run } = await request(app).post("/workflows/wf-approval/execute").send({ sync: true });
     const tasks = listTasksByExecutionRun(db, run.id);
     const s1 = tasks.find((t) => t.stepId === 's1')!;
     updateTask(db, s1.id, { status: 'completed', output: {} });
@@ -257,7 +257,7 @@ describe('Approval gate endpoints', () => {
 
   it('returns 409 when step is not awaiting approval', async () => {
     simpleWorkflow();
-    const { body: run } = await request(app).post('/workflows/wf-1/execute').send();
+    const { body: run } = await request(app).post("/workflows/wf-1/execute").send({ sync: true });
     const res = await request(app).post(`/execution-runs/${run.id}/steps/s1/approve`).send();
     expect(res.status).toBe(409);
   });
@@ -279,7 +279,7 @@ describe('POST /execution-runs/check-timeouts', () => {
       status: 'pending',
     });
 
-    const { body: run } = await request(app).post('/workflows/wf-timeout/execute').send();
+    const { body: run } = await request(app).post("/workflows/wf-timeout/execute").send({ sync: true });
 
     // Wait briefly so timeout fires
     await new Promise((r) => setTimeout(r, 5));
@@ -304,7 +304,7 @@ describe('POST /execution-runs/check-timeouts', () => {
 
     const { body: run } = await request(app)
       .post('/workflows/wf-run-timeout/execute')
-      .send({ timeoutMs: 1 });
+      .send({ timeoutMs: 1, sync: true });
 
     await new Promise((r) => setTimeout(r, 5));
 

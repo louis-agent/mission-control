@@ -12,6 +12,7 @@ import {
   listTimedOutRuns,
   listTasksByExecutionRun,
   updateTask,
+  createJob,
   InvalidTransitionError,
   type DB,
   type ExecutionRun,
@@ -24,7 +25,7 @@ export function createWorkflowRunnerApp(db: DB): Application {
   const app = express();
   app.use(express.json());
 
-  // POST /workflows/:id/execute — start a new execution run
+  // POST /workflows/:id/execute — enqueue a workflow execution job (202 Accepted)
   app.post('/workflows/:id/execute', (req: Request<{ id: string }>, res: Response) => {
     const workflow = cachedGetWorkflowById(db, req.params.id);
     if (!workflow) {
@@ -32,13 +33,24 @@ export function createWorkflowRunnerApp(db: DB): Application {
       return;
     }
 
-    try {
-      const { timeoutMs } = req.body ?? {};
-      const run = startExecution(db, req.params.id, { timeoutMs });
-      res.status(201).json(run);
-    } catch (err) {
-      res.status(422).json({ error: (err as Error).message });
+    const { timeoutMs, sync } = (req.body ?? {}) as { timeoutMs?: number; sync?: boolean };
+
+    // sync=true keeps the old synchronous behaviour (useful for tests / local dev)
+    if (sync) {
+      try {
+        const run = startExecution(db, req.params.id, { timeoutMs });
+        res.status(201).json(run);
+      } catch (err) {
+        res.status(422).json({ error: (err as Error).message });
+      }
+      return;
     }
+
+    const job = createJob(db, {
+      type: 'workflow_execution',
+      payload: { workflowId: req.params.id, timeoutMs },
+    });
+    res.status(202).json({ jobId: job.id, status: job.status });
   });
 
   // GET /execution-runs/:id — get run status with step results

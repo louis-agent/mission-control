@@ -34,7 +34,7 @@ describe('GET /execution-runs/:id/timeline', () => {
       status: 'pending',
     });
 
-    const execRes = await request(app).post('/workflows/wf-1/execute').send();
+    const execRes = await request(app).post('/workflows/wf-1/execute').send({ sync: true });
     expect(execRes.status).toBe(201);
 
     const runId = execRes.body.id as string;
@@ -58,7 +58,7 @@ describe('GET /execution-runs/:id/timeline', () => {
       status: 'pending',
     });
 
-    const execRes = await request(app).post('/workflows/wf-2/execute').send();
+    const execRes = await request(app).post('/workflows/wf-2/execute').send({ sync: true });
     const runId = execRes.body.id as string;
     const res = await request(app).get(`/execution-runs/${runId}/timeline`);
 
@@ -75,7 +75,7 @@ describe('GET /execution-runs/:id/timeline', () => {
       status: 'pending',
     });
 
-    const execRes = await request(app).post('/workflows/wf-3/execute').send();
+    const execRes = await request(app).post('/workflows/wf-3/execute').send({ sync: true });
     const runId = execRes.body.id as string;
     const res = await request(app).get(`/execution-runs/${runId}/timeline`);
 

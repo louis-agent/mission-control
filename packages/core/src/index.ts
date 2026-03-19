@@ -139,6 +139,18 @@ export type {
   UpdateAlertRuleInput,
 } from './crud-alerts.js';
 
+// Background jobs
+export {
+  createJob,
+  getJobById,
+  listPendingJobs,
+  listJobs,
+  claimJob,
+  completeJob,
+  failJob,
+} from './crud-jobs.js';
+export type { Job, JobType, JobStatus, CreateJobInput } from './crud-jobs.js';
+
 // Repository layer (database-agnostic interfaces + adapters)
 export type {
   AgentRepository,
