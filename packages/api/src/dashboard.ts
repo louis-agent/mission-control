@@ -1,5 +1,6 @@
 import express, { type Application, type Request, type Response } from 'express';
-import { listAgents, listTasks, listWorkflows, listExecutionRuns, type DB } from '@mission-control/core';
+import { listTasks, listExecutionRuns, type DB } from '@mission-control/core';
+import { cachedListAgents, cachedListWorkflows } from './cache.js';
 
 // ── Time-series bucket ────────────────────────────────────────────────────────
 
@@ -35,9 +36,9 @@ export function createDashboardApp(db: DB): Application {
   const app = express();
 
   app.get('/dashboard', (_req: Request, res: Response) => {
-    const agents = listAgents(db);
+    const agents = cachedListAgents(db);
     const tasks = listTasks(db);
-    const workflows = listWorkflows(db);
+    const workflows = cachedListWorkflows(db);
     const runs = listExecutionRuns(db);
 
     const now = Date.now();

@@ -3,14 +3,18 @@ import { ZodError } from 'zod';
 import {
   createAgent,
   getAgentById,
-  listAgents,
-  listAgentsByCapability,
   updateAgent,
   deleteAgent,
   heartbeatAgent,
   type DB,
 } from '@mission-control/core';
 import { CreateAgentSchema, UpdateAgentSchema } from './validation.js';
+import {
+  cachedListAgents,
+  cachedGetAgentById,
+  cachedListAgentsByCapability,
+  invalidateAgentCache,
+} from './cache.js';
 
 function replyZodError(res: Response, err: ZodError): void {
   res.status(400).json({
@@ -32,7 +36,7 @@ export function createRegistryApp(db: DB): Application {
 
     const { id, name, capabilities, status, metadata } = parsed.data;
 
-    if (getAgentById(db, id)) {
+    if (cachedGetAgentById(db, id)) {
       res.status(409).json({ error: `Agent with id '${id}' already exists` });
       return;
     }
@@ -44,6 +48,7 @@ export function createRegistryApp(db: DB): Application {
       status: status ?? 'idle',
       metadata: metadata ?? {},
     });
+    invalidateAgentCache(db, id);
 
     res.status(201).json(agent);
   });
@@ -53,8 +58,8 @@ export function createRegistryApp(db: DB): Application {
     const { capability } = req.query as { capability?: string };
     try {
       const result = capability
-        ? listAgentsByCapability(db, capability)
-        : listAgents(db);
+        ? cachedListAgentsByCapability(db, capability)
+        : cachedListAgents(db);
       res.json(result);
     } catch (err) {
       next(err);
@@ -63,7 +68,7 @@ export function createRegistryApp(db: DB): Application {
 
   // GET /agents/:id — get agent by id
   app.get('/agents/:id', (req: Request<{ id: string }>, res: Response) => {
-    const agent = getAgentById(db, req.params.id);
+    const agent = cachedGetAgentById(db, req.params.id);
     if (!agent) {
       res.status(404).json({ error: 'Agent not found' });
       return;
@@ -73,7 +78,7 @@ export function createRegistryApp(db: DB): Application {
 
   // PATCH /agents/:id — update agent fields
   app.patch('/agents/:id', (req: Request<{ id: string }>, res: Response, next: NextFunction) => {
-    const existing = getAgentById(db, req.params.id);
+    const existing = cachedGetAgentById(db, req.params.id);
     if (!existing) {
       res.status(404).json({ error: 'Agent not found' });
       return;
@@ -86,6 +91,7 @@ export function createRegistryApp(db: DB): Application {
     }
 
     const updated = updateAgent(db, req.params.id, parsed.data);
+    invalidateAgentCache(db, req.params.id);
     res.json(updated);
   });
 
@@ -96,6 +102,7 @@ export function createRegistryApp(db: DB): Application {
       res.status(404).json({ error: 'Agent not found' });
       return;
     }
+    invalidateAgentCache(db, req.params.id);
     res.status(204).send();
   });
 
@@ -106,6 +113,7 @@ export function createRegistryApp(db: DB): Application {
       res.status(404).json({ error: 'Agent not found' });
       return;
     }
+    invalidateAgentCache(db, req.params.id);
     res.json(agent);
   });
 

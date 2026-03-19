@@ -2,7 +2,6 @@ import express, { type Application, type Request, type Response } from 'express'
 import {
   getWorkflowById,
   getExecutionRunById,
-  listAgents,
   validateWorkflow,
   startExecution,
   advanceExecution,
@@ -19,6 +18,7 @@ import {
   type StepResult,
   type Task,
 } from '@mission-control/core';
+import { cachedGetWorkflowById, cachedListAgents } from './cache.js';
 
 export function createWorkflowRunnerApp(db: DB): Application {
   const app = express();
@@ -26,7 +26,7 @@ export function createWorkflowRunnerApp(db: DB): Application {
 
   // POST /workflows/:id/execute — start a new execution run
   app.post('/workflows/:id/execute', (req: Request<{ id: string }>, res: Response) => {
-    const workflow = getWorkflowById(db, req.params.id);
+    const workflow = cachedGetWorkflowById(db, req.params.id);
     if (!workflow) {
       res.status(404).json({ error: 'Workflow not found' });
       return;
@@ -168,13 +168,13 @@ export function createWorkflowRunnerApp(db: DB): Application {
 
   // GET /workflows/:id/validate — dry-run validation
   app.get('/workflows/:id/validate', (req: Request<{ id: string }>, res: Response) => {
-    const workflow = getWorkflowById(db, req.params.id);
+    const workflow = cachedGetWorkflowById(db, req.params.id);
     if (!workflow) {
       res.status(404).json({ error: 'Workflow not found' });
       return;
     }
 
-    const agents = listAgents(db);
+    const agents = cachedListAgents(db);
     const result = validateWorkflow(workflow, agents);
     res.json(result);
   });
