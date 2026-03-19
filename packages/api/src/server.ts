@@ -1,6 +1,11 @@
 import { randomUUID } from 'crypto';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { createDb, EventBus, LocalStorageAdapter } from '@mission-control/core';
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
+const DASHBOARD_DIR = join(__dirname, '../public');
 import { createSseApp } from './sse.js';
 import { createRegistryApp } from './registry.js';
 import { createQueueApp } from './queue.js';
@@ -49,6 +54,7 @@ if (SLACK_SIGNING_SECRET) {
   app.use(createSlackApp(eventBus, { signingSecret: SLACK_SIGNING_SECRET }));
 }
 
+app.use(express.static(DASHBOARD_DIR));
 app.use(express.json());
 
 // ── Request logging middleware ─────────────────────────────────────────────────
