@@ -117,6 +117,9 @@ export {
   upsertAlertState,
 } from './crud.js';
 
+export { LocalStorageAdapter } from './storage.js';
+export type { StorageAdapter } from './storage.js';
+
 export { PluginRegistry } from './plugin.js';
 export type { TaskHandler } from './plugin.js';
 
