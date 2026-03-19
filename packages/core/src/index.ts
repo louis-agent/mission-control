@@ -119,6 +119,8 @@ export {
 
 export { LocalStorageAdapter } from './storage.js';
 export type { StorageAdapter } from './storage.js';
+export { S3StorageAdapter } from './storage-s3.js';
+export type { S3StorageConfig } from './storage-s3.js';
 
 export { PluginRegistry } from './plugin.js';
 export type { TaskHandler } from './plugin.js';
