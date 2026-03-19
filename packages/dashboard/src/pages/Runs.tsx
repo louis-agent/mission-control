@@ -8,7 +8,7 @@ const TD: React.CSSProperties = { padding: '0.5rem 0.75rem', borderBottom: '1px 
 
 export function Runs() {
   const [runs, setRuns] = useState<ExecutionRun[]>([]);
-  const sseEvent = useSSE('/events');
+  const sseEvent = useSSE('/events/stream');
 
   const load = () => api.runs.list().then(setRuns).catch(console.error);
   useEffect(() => { void load(); }, []);

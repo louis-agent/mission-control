@@ -10,7 +10,7 @@ const STATUSES = ['all', 'pending', 'running', 'completed', 'failed'];
 export function Tasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [filter, setFilter] = useState('all');
-  const sseEvent = useSSE('/events');
+  const sseEvent = useSSE('/events/stream');
 
   const load = () => api.tasks.list().then(setTasks).catch(console.error);
   useEffect(() => { void load(); }, []);

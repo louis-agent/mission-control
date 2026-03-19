@@ -97,20 +97,30 @@ if (!DISABLE_AUTH) {
 app.use(rateLimitMiddleware);
 app.use(createAuditLoggerMiddleware(db));
 
-// ── Routes ────────────────────────────────────────────────────────────────────
+// ── SSE (served at root so browser EventSource connects without /api prefix) ──
 app.use(createSseApp(eventBus));
-app.use(createRegistryApp(db));
-app.use(createQueueApp(db));
-app.use(createWorkflowRunnerApp(db));
-app.use(createApiKeysApp(db));
-app.use(createAuditLogApp(db));
-app.use(createWebhooksApp(db));
-app.use(createDashboardApp(db));
-app.use(createAlertsApp(db));
-app.use(createPluginManagerApp());
-app.use(createStorageApp(storage));
-app.use(createJobsApp(db));
-app.use(createOpenApiApp());
+
+// ── API routes (all under /api prefix, matching the dashboard client's BASE) ──
+const apiRouter = express.Router();
+apiRouter.use(createRegistryApp(db));
+apiRouter.use(createQueueApp(db));
+apiRouter.use(createWorkflowRunnerApp(db));
+apiRouter.use(createApiKeysApp(db));
+apiRouter.use(createAuditLogApp(db));
+apiRouter.use(createWebhooksApp(db));
+apiRouter.use(createDashboardApp(db));
+apiRouter.use(createAlertsApp(db));
+apiRouter.use(createPluginManagerApp());
+apiRouter.use(createStorageApp(storage));
+apiRouter.use(createJobsApp(db));
+apiRouter.use(createOpenApiApp());
+app.use('/api', apiRouter);
+
+// ── SPA catch-all: serve index.html for any unmatched route ──────────────────
+const INDEX_HTML = join(DASHBOARD_DIR, 'index.html');
+app.get('/{*path}', (_req: Request, res: Response) => {
+  res.sendFile(INDEX_HTML);
+});
 
 // ── Centralised error handler (must be last) ──────────────────────────────────
 app.use(errorHandler);

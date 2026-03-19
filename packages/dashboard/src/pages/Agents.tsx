@@ -8,7 +8,7 @@ const TD: React.CSSProperties = { padding: '0.5rem 0.75rem', borderBottom: '1px 
 
 export function Agents() {
   const [agents, setAgents] = useState<Agent[]>([]);
-  const sseEvent = useSSE('/events');
+  const sseEvent = useSSE('/events/stream');
 
   const load = () => api.agents.list().then(setAgents).catch(console.error);
   useEffect(() => { void load(); }, []);
