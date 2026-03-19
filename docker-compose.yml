@@ -21,6 +21,28 @@ services:
       retries: 3
       start_period: 10s
 
+  # PostgreSQL for production use or integration testing.
+  # Start with: docker compose --profile postgres up -d postgres
+  # Test URL: postgres://mc:mc@localhost:5432/mission_control
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: mc
+      POSTGRES_PASSWORD: mc
+      POSTGRES_DB: mission_control
+    volumes:
+      - mc-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mc -d mission_control"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   mc-data:
+    driver: local
+  mc-pg-data:
     driver: local

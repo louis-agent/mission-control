@@ -270,6 +270,51 @@ docker compose up
 
 ---
 
+## PostgreSQL
+
+By default Mission Control uses an embedded SQLite database. For production workloads you can switch to PostgreSQL by setting `DATABASE_URL`.
+
+### Quick start with Docker Compose
+
+```bash
+# Start the bundled PostgreSQL service
+docker compose --profile postgres up -d postgres
+
+# Start the API pointing at PostgreSQL
+DATABASE_URL=postgres://mc:mc@localhost:5432/mission_control pnpm dev
+```
+
+The schema is created automatically on first startup via the `createPostgresRepositories()` factory — no manual migration step required.
+
+### Environment variables
+
+| Variable | Description | Default |
+|---|---|---|
+| `DATABASE_URL` | PostgreSQL connection string (`postgres://…`) | _(unset — SQLite)_ |
+| `DB_PATH` | SQLite file path (ignored when `DATABASE_URL` is set) | `./mission-control.db` |
+
+### Running integration tests against PostgreSQL
+
+The PostgreSQL adapter tests are skipped automatically when `POSTGRES_TEST_URL` is not set. To run them:
+
+```bash
+# 1. Start a PostgreSQL container (one-time setup)
+docker run -d --name mc-test-postgres \
+  -e POSTGRES_PASSWORD=testpassword \
+  -e POSTGRES_USER=testuser \
+  -e POSTGRES_DB=testdb \
+  -p 5433:5432 \
+  postgres:16-alpine
+
+# 2. Run the adapter tests
+POSTGRES_TEST_URL=postgres://testuser:testpassword@localhost:5433/testdb \
+  pnpm --filter @mission-control/core test -- repository-postgres
+```
+
+The test suite mirrors the full SQLite test coverage: agents, tasks, workflows, execution runs, events, API keys, audit log, webhooks, and alerts.
+
+---
+
 ## Interactive API Docs
 
 Swagger UI is available at **http://localhost:3000/api/docs** once the server is running.
