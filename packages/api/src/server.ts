@@ -8,6 +8,7 @@ import { createWorkflowRunnerApp } from './workflow-runner.js';
 import { createApiKeysApp } from './api-keys.js';
 import { createAuditLogApp } from './audit-log.js';
 import { createWebhooksApp } from './webhooks.js';
+import { createOpenApiApp } from './openapi.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { rateLimitMiddleware } from './middleware/rate-limiter.js';
 import { createAuditLoggerMiddleware } from './middleware/audit-logger.js';
@@ -67,6 +68,7 @@ app.use(createWorkflowRunnerApp(db));
 app.use(createApiKeysApp(db));
 app.use(createAuditLogApp(db));
 app.use(createWebhooksApp(db));
+app.use(createOpenApiApp());
 
 // ── Centralised error handler (must be last) ──────────────────────────────────
 app.use(errorHandler);
