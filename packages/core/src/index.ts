@@ -138,3 +138,19 @@ export type {
   CreateAlertRuleInput,
   UpdateAlertRuleInput,
 } from './crud-alerts.js';
+
+// Repository layer (database-agnostic interfaces + adapters)
+export type {
+  AgentRepository,
+  TaskRepository,
+  WorkflowRepository,
+  ExecutionRunRepository,
+  EventRepository,
+  ApiKeyRepository,
+  AuditLogRepository,
+  WebhookRepository,
+  AlertRepository,
+  Repositories,
+} from './repository.js';
+export { createSqliteRepositories } from './repository-sqlite.js';
+export { createRepositories } from './db-factory.js';
